@@ -6,7 +6,7 @@ from corelib.exception import RenderException
 from model import RpyElement, Trigger
 
 TEXT_TEMPLATE = "{character}\"{text}\""  # 对话模板
-CHARACTER_TEMPLATE = "define {name} = Character('{role}', color=\"{color}\")"  # 角色模板
+CHARACTER_TEMPLATE = "define {name} = Character('{role}}', color=\"{color}\")"  # 角色模板
 
 
 # 对话
@@ -18,12 +18,12 @@ class Text(RpyElement, Trigger):
         :param character: 角色
         :param cmd: 指令
         """
-        super().__init__(cmd)
+        super(Text).__init__(cmd)
         self.text = text
         self.character = character
 
     def render(self):
-        return TEXT_TEMPLATE.format(character=self.character, text=self.text)
+        return TEXT_TEMPLATE.format(character=self.character.name, text=self.text)
 
 
 # 角色
@@ -67,7 +67,7 @@ class Image(RpyElement):
         return "scene {name}".format(name=self.name)
 
     def show(self):
-        if self.position=="":
+        if self.position:
             return "show {name}".format(name=self.name)
         else:
             return "show {name} at {position}".format(name=self.name, position=self.position)
@@ -147,12 +147,5 @@ class Audio(RpyElement):
             return self.stop()
         else:
             raise RenderException("不存在的Audio指令:{}".format(self.cmd))
-"""print("Test @2020-05-22-18:43")
-mytext=Text("嗨……唔……","m")
-mycharacter=Character("m","我","image_for_what?","#c8ffc8")
-sylvie_green_smile=Image("sylvie green smile","show","center")
-sylvie_green_smile_transition=Transition("dissolve")
 
-mylist=[mytext,mycharacter,sylvie_green_smile,sylvie_green_smile_transition]
-print(render(mylist))"""
 
