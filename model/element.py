@@ -5,7 +5,7 @@
 from corelib.exception import RenderException
 from model import RpyElement
 
-ROLE_TEMPLATE = "define {name} = Character('{role}'), color=\"{color}\")"  # 角色模板
+ROLE_TEMPLATE = "define {name} = Character('{role}', color=\"{color}\")"  # 角色模板
 
 
 # 对话
@@ -49,7 +49,7 @@ class Role(RpyElement):
         """
         self.pronoun = pronoun
         self.name = name
-        self.color = color or "#FFFFF"
+        self.color = color or "#c8c8ff"
 
     def render(self):
         if not self.name:
@@ -142,6 +142,10 @@ class Audio(RpyElement):
     def sound(self):
         return "play sound \"{}\"".format(self.name)
 
+    # 不会循环播放
+    def loop(self):
+        return self.sound() + " loop"
+
     # 停止播放音乐
     def stop(self):
         return "stop music"
@@ -157,5 +161,28 @@ class Audio(RpyElement):
             return self.sound()
         elif self.cmd == 'stop':
             return self.stop()
+        elif self.cmd == 'loop':
+            return self.loop()
         else:
             raise RenderException("不存在的Audio指令:{}".format(self.cmd))
+
+
+class Mode(RpyElement):
+
+    def __init__(self, mode):
+        self.mode = mode
+
+    def render(self):
+        if self.mode == 'nvl':
+            return ''
+        else:
+            return 'nvl clear'
+
+
+# 自定义指令
+class Command(RpyElement):
+    def __init__(self, cmd):
+        self.cmd = cmd
+
+    def render(self):
+        return self.cmd

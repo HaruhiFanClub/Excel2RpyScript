@@ -4,7 +4,7 @@
     将Excel中的数据转化为rpy中的对象
 """
 from corelib.exception import ParseFileException
-from model.element import Text, Image, Transition, Audio, Role
+from model.element import Text, Image, Transition, Audio, Role, Mode, Command
 from tools.excel import read_excel
 
 ElementMapping = {
@@ -27,6 +27,10 @@ TransitionMapping = {
     "褪色": "fade"
 }
 
+SoundCmdMapping = {
+    "循环": "loop"
+}
+
 
 class Converter(object):
 
@@ -38,7 +42,7 @@ class Converter(object):
     def add_role(self, name):
         role = self.role_name_mapping.get(name)
         if not role:
-            role = Role("role{}".format(len(self.role_name_mapping.keys())+1), name)
+            role = Role("role{}".format(len(self.role_name_mapping.keys()) + 1), name)
             self.role_name_mapping[name] = role
         return role
 
@@ -62,11 +66,11 @@ class Converter(object):
             raise err
         return result
 
-    def parse_by_row(self, last_role, row_data):
+    def parse_by_row(self, last_role, last_mode, row_data):
         # 当前角色、对话文本
         current_role_name, text = row_data[0], row_data[1]
-        # 音乐、立绘、_、背景、备注、模式、音效、转场、_
-        music, character, _, background, remark, mode, sound, transition, _ = row_data[18:]
+        # 音乐、立绘、换页、背景、备注、模式、音效、转场、特殊效果
+        music, character, change_page, background, remark, mode, sound, transition, _ = row_data[18:]
         # 角色信息
         if last_role and current_role_name == "":
             current_role = last_role
@@ -89,19 +93,35 @@ class Converter(object):
             text.add_triggers(Image(background, "scene"))
         # 音效
         if sound:
-            cmd = "stop" if sound == "stop" else "sound"
-            text.add_triggers(Audio(sound, cmd))
+            if sound.startswith('循环'):
+                text.add_triggers(Audio(sound.replace('循环', ''), 'loop'))
+            else:
+                cmd = "stop" if sound == "stop" else "sound"
+                text.add_triggers(Audio(sound, cmd))
         # 转场
         if transition:
             t_style = TransitionMapping.get(transition, "")
             text.add_triggers(Transition(t_style))
-        return current_role, text
+        # nvl模式
+        if mode == 'nvl':
+            text.add_triggers(Mode('nvl'))
+            current_mode = 'nvl'
+        elif mode == 'adv' and last_mode == 'nvl':
+            text.add_triggers(Mode('adv'))
+            current_mode = 'adv'
+        else:
+            current_mode = last_mode
+        # 换页
+        if change_page:
+            text.add_triggers(Command("nvl clear"))
+        return current_mode, current_role, text
 
     def generate_rpy_elements(self):
         current_role = None
+        current_mode = None
         texts = list()
         for row in self.parse_file():
-            current_role, text = self.parse_by_row(current_role, row)
+            current_mode, current_role, text = self.parse_by_row(current_role, current_mode, row)
             texts.append(text)
         return texts
 
