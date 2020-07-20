@@ -24,7 +24,17 @@ PositionMapping = {
 
 TransitionMapping = {
     "溶解": "dissolve",
-    "褪色": "fade"
+    "褪色": "fade",
+    "闪白": "Fade(0.1,0.0,0.5,color=\"#FFFFFF\")",
+    "像素化": "pixellate",
+    "横向振动": "hpunch",
+    "纵向振动": "vpunch",
+    "百叶窗": "blinds",
+    "网格覆盖": "squares",
+    "擦除": "wipeleft",
+    "滑入": "slideleft",
+    "滑出": "slideawayleft",
+    "推出": "pushright",
 }
 
 SoundCmdMapping = {
@@ -84,13 +94,13 @@ class Converter(object):
         if music:
             cmd = "stop" if music == "none" else "play"
             text.add_triggers(Audio(music, cmd))
+        # 背景信息
+        if background:
+            text.add_triggers(Image(background, "scene"))
         # 立绘信息
         if character:
             characters = [Converter.generate_character(ch) for ch in character.split(";")]
             text.add_triggers(*characters)
-        # 背景信息
-        if background:
-            text.add_triggers(Image(background, "scene"))
         # 音效
         if sound:
             if sound.startswith('循环'):
