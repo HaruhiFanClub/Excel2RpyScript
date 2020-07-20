@@ -3,7 +3,6 @@
 
 from tkinter import Tk, Text, PhotoImage, Canvas
 from tkinter.messagebox import showerror, showinfo
-from tkinter.font import Font
 from tkinter.ttk import Frame, Style, Entry, Combobox, Button, Label
 from tkinter import filedialog
 from corelib.exception import ConvertException, SaveFileException
@@ -136,7 +135,6 @@ class Application(Application_ui):
             self.saveAddr.delete('0','end')
             self.Text.delete('0.0','end')
             
-
 if __name__ == "__main__":
     top = Tk()
     top.iconbitmap('sos.ico')
