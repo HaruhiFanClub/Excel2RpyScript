@@ -117,8 +117,13 @@ class Audio(RpyElement):
         :param cmd: 指令
         :param args: 参数 fadeout/fadein: 音乐的淡入淡出  next_audio:下一个音效
         """
-        self.name = name
-        if name.split(".")[-1].lower() != 'mp3':
+        if isinstance(name, float):
+            self.name = str(int(name))
+        elif isinstance(name, int):
+            self.name = str(name)
+        else:
+            self.name = name
+        if self.name.split(".")[-1].lower() != 'mp3':
             self.name += ".mp3"
         self.cmd = cmd
         self.fadeout = args.get("fadeout", 0.5)
