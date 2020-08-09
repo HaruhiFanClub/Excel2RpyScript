@@ -1,4 +1,4 @@
-# Excel文件转Rpy脚本
+# Excel文件转Rpy脚本(0.1.1)
 
 ## 开发环境
 - Python 3.8
@@ -19,3 +19,13 @@
 |--app.py 程序入口
 ```
 
+
+## 打包程序
+- 工具: pyinstaller  
+- CMD: `pyinstaller -F -w -i .\asset\sos.ico .\app.py -n Excel2RpyScript`
+
+## relase notes
+- 0.1.1
+    - fix [立绘回收 #20](https://github.com/HaruhiFanClub/Excel2RpyScript/issues/20)
+    - fix [Nvl模式与adv模式的切换 #19](https://github.com/HaruhiFanClub/Excel2RpyScript/issues/19)
+    - 去掉Exe文件的外部依赖
