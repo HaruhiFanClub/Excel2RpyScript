@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 #-*- coding:utf-8 -*-
-
+import base64
+from io import BytesIO
 from tkinter import Tk, Text, PhotoImage, Canvas
 from tkinter.messagebox import showerror, showinfo
 from tkinter.ttk import Frame, Style, Entry, Combobox, Button, Label
 from tkinter import filedialog
 from corelib.exception import ConvertException, SaveFileException
 from handler.converter import Converter
+from tools.image_data import *
+
 
 class Application_ui(Frame):
     #这个类仅实现界面生成功能，具体事件处理代码在子类Application中。
@@ -21,8 +24,7 @@ class Application_ui(Frame):
         self.top = self.winfo_toplevel()
 
         self.style = Style()
-
-        self.bkg_gif = PhotoImage(file='background.gif')
+        self.bkg_gif = PhotoImage(data=base64.b64decode(back_ground_gif_data))
         self.background_label = Label(self.top, image=self.bkg_gif)
         self.background_label.place(x=0, y=0, relwidth=1, relheight=1)
 
@@ -42,8 +44,7 @@ class Application_ui(Frame):
         self.InputButton = Button(self.top, text='浏览', command=self.InputButton_Cmd, style='InputButton.TButton')
         self.InputButton.place(relx=0.184, rely=0.7, relwidth=0.133, relheight=0.073)
 
-
-        self.Haruhi_gif = PhotoImage(file='Haruhi.gif')
+        self.Haruhi_gif = PhotoImage(data=base64.b64decode(haruhi_gif_data))
         self.style.configure('ConvertButton.TButton',font=('宋体',9))
         self.ConvertButton = Button(self.top, image=self.Haruhi_gif, command=self.ConvertButton_Cmd, style='ConvertButton.TButton')
         self.ConvertButton.place(relx=0.788, rely=0.7, relwidth=0.146, relheight=0.236)
@@ -70,7 +71,8 @@ class Application(Application_ui):
                 with open(output_path, 'w', encoding='utf-8') as f:
                     for k, v in c.role_name_mapping.items():
                         f.write(v.render() + "\n")
-                    f.write("define narrator = Character(None, kind=nvl)\n")
+                    f.write("define narrator_nvl = Character(None, kind=nvl)\n")
+                    f.write("define narrator_adv = Character(None, kind=adv)\n")
                     f.write("\nlabel start:\n")
                     for text in texts:
                         for t in text.triggers:
@@ -137,7 +139,8 @@ class Application(Application_ui):
             
 if __name__ == "__main__":
     top = Tk()
-    top.iconbitmap('sos.ico')
+    # top.iconbitmap('sos.ico')
+    top.iconphoto(False, PhotoImage(data=base64.b64decode(haruhi_gif_data)))
     Application(top).mainloop()
     try: top.destroy()
     except: pass

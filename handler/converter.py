@@ -22,6 +22,10 @@ PositionMapping = {
     "truecenter": "truecenter",
 }
 
+ImageCmdMapping = {
+    "hide": "hide",
+}
+
 TransitionMapping = {
     "溶解": "dissolve",
     "褪色": "fade",
@@ -81,15 +85,27 @@ class Converter(object):
         current_role_name, text = row_data[0], row_data[1]
         # 音乐、立绘、换页、背景、备注、模式、音效、转场、特殊效果
         music, character, change_page, background, remark, mode, sound, transition, _ = row_data[18:]
+        # nvl模式
+        if mode == 'nvl':
+            current_mode = 'nvl'
+        elif mode == 'adv':
+            current_mode = 'adv'
+        else:
+            current_mode = last_mode
         # 角色信息
         if last_role and current_role_name == "":
             current_role = last_role
         elif current_role_name not in ["", "旁白"]:
             current_role = self.add_role(current_role_name)
+        elif current_mode == 'adv':
+            current_role = Role("narrator_adv", "None")
+        elif current_mode == 'nvl':
+            current_role = Role("narrator_nvl", "None")
         else:
             current_role = None
 
         text = Text(text, current_role)
+        text.add_triggers(Mode(current_mode))
         # 音乐信息
         if music:
             cmd = "stop" if music == "none" else "play"
@@ -112,15 +128,6 @@ class Converter(object):
         if transition:
             t_style = TransitionMapping.get(transition, "")
             text.add_triggers(Transition(t_style))
-        # nvl模式
-        if mode == 'nvl':
-            text.add_triggers(Mode('nvl'))
-            current_mode = 'nvl'
-        elif mode == 'adv' and last_mode == 'nvl':
-            text.add_triggers(Mode('adv'))
-            current_mode = 'adv'
-        else:
-            current_mode = last_mode
         # 换页
         if change_page:
             text.add_triggers(Command("nvl clear"))
@@ -138,8 +145,8 @@ class Converter(object):
     @classmethod
     def generate_character(cls, img_str):
         last_word = img_str.split(" ")[-1]
-        position = PositionMapping.get(last_word, "left")
+        position = PositionMapping.get(last_word)
         if position:
             return Image(img_str.replace(last_word, "").strip(), "show", position)
         else:
-            return Image(img_str, "show")
+            return Image(img_str.replace(last_word, "").strip(), ImageCmdMapping.get(last_word, "hide"))
