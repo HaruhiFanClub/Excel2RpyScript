@@ -5,7 +5,7 @@ define narrator_adv = Character(None, kind=adv)
 
 label start:
     
-    play music "19.mp3"
+    play music "audio/19.mp3"
     scene bg34
     show haruhi 1 at left
     show kyon 1 at right
@@ -23,10 +23,10 @@ label start:
 和那个名叫凉宫春日的女人缓慢地穿行在空旷且黑暗的隧道里。 "
     
     stop music
-    play sound "zou_lu_1.mp3" loop
+    play sound "audio/zou_lu_1.mp3" loop
     narrator_nvl"不错，到目前为止我和春日已经沿着隧道壁走了半个小时， 但仍没有一点要找到出口的迹象。"
     
-    play music "19.mp3"
+    play music "audio/19.mp3"
     show haruhi 1 at left
     show kyon 5 at center
     with dissolve
@@ -34,7 +34,7 @@ label start:
     
     narrator_nvl"如果这是一个恐怖游戏的关卡，那么我一定要提名它拿今年科隆游戏展的最佳恐怖游戏配音奖——如果有这个奖项的话。"
     
-    play music "20.mp3"
+    play music "audio/20.mp3"
     narrator_nvl"就在我试图用一些轻松一点的想法冲淡自己的紧张，尽量不让自己在逃出去之前就被自己的肾上腺素毒死之时，我那紧紧握着春日右手的左手，又一次感受到了来自春日那微微地握力。 "
     
     narrator_nvl"不仅是我，就连平日里元气十足、坐镇北高文学部部室四处征伐的团长大人，此刻也通过手心里微微渗出的汗滴来委婉地告诉我她的不安。"
@@ -62,7 +62,7 @@ label start:
     with Fade(0.1,0.0,0.5,color="#FFFFFF")
     narrator_adv"我急忙把身体往后倾斜，并借助着右手触碰到的一块突起的岩石，在体重、地心引力和惯性的共同作用下，才勉强把她拉了起来，避免了她磕在隧道的某个地方。"
     
-    play music "22.mp3"
+    play music "audio/22.mp3"
     show haruhi 1 at left
     show kyon 4 at center
     with dissolve
