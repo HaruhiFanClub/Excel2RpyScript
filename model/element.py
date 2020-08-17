@@ -73,7 +73,10 @@ class Image(RpyElement):
 
     # 当某个角色离开但场景不变化时，才需要使用hide
     def hide(self):
-        return "hide {name}".format(name=self.name)
+        if not self.name:
+            return ""
+        else:
+            return "hide {name}".format(name=self.name)
 
     # 清除所有图像并显示了一个背景图像
     def scene(self):
