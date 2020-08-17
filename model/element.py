@@ -126,6 +126,7 @@ class Audio(RpyElement):
             self.name = name
         if self.name.split(".")[-1].lower() != 'mp3':
             self.name += ".mp3"
+        self.name = "audio/" + self.name
         self.cmd = cmd
         self.fadeout = args.get("fadeout", 0.5)
         self.fadein = args.get("fadein", 0.5)
