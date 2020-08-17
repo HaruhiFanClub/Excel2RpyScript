@@ -128,9 +128,8 @@ class Application(Application_ui):
             try: 
                 c = Converter(path)
                 texts = c.generate_rpy_elements()
-                cnt = len(texts)
-                for i in range(cnt):
-                    self.convert(path, self.saveAddr.get()+'/'+self.getFileName(path)+'_'+(str)(i+1)+'.rpy', texts[i], c)
+                for i,text in enumerate(texts):
+                    self.convert(path, self.saveAddr.get()+'/'+self.getFileName(path)+'_'+(str)(i+1)+'.rpy', text, c)
             except ConvertException as err:
                 success_flag = False
                 showerror("转换错误", err.msg)

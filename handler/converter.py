@@ -71,17 +71,15 @@ class Converter(object):
             cnt = len(wb.sheets())
         except ParseFileException as err:
             raise err
-        result = [[]for i in range(cnt)]
-        wb = read_excel(self.file_path)
-        sheet = list()
-        for i in range(cnt):
-            sheet.append(wb.sheet_by_index(i))  # 通过索引获取表格
-        for i in range(cnt):
-            for idx in range(7, sheet[i].nrows):
-                data = [r.value for r in sheet[i].row(idx)]
+        result = []
+        for sheet in wb.sheets():
+            sheet_data = []
+            for i in range(7, sheet.nrows):
+                data = [r.value for r in sheet.row(i)]
                 if not any(data):
                     continue
-                result[i].append(data)
+                sheet_data.append(data)
+            result.append(sheet_data)
         return result
 
     def parse_by_row(self, last_role, last_mode, row_data):
@@ -140,13 +138,18 @@ class Converter(object):
     def generate_rpy_elements(self):
         current_role = None
         current_mode = None
-        tmp = self.parse_file()
-        cnt = len(tmp)
-        texts = [[]for i in range(cnt)]
-        for i in range(cnt):
-            for row in tmp[i]:
+        tmp = None
+        try:
+            tmp = self.parse_file()
+        except ParseFileException as err:
+            raise err
+        texts = []
+        for i in tmp:
+            n_text = []
+            for row in i:
                 current_mode, current_role, text = self.parse_by_row(current_role, current_mode, row)
-                texts[i].append(text)
+                n_text.append(text)
+            texts.append(n_text)
         return texts
 
     @classmethod
