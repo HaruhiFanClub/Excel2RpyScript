@@ -64,9 +64,7 @@ class Application(Application_ui):
     def __init__(self, master=None):
         Application_ui.__init__(self, master)
 
-    def convert(self, input_path, output_path):
-            c = Converter(input_path)
-            texts = c.generate_rpy_elements()
+    def convert(self, input_path, output_path, texts, c):
             try:
                 with open(output_path, 'w', encoding='utf-8') as f:
                     for k, v in c.role_name_mapping.items():
@@ -128,7 +126,11 @@ class Application(Application_ui):
         success_flag = True
         for path in self.getTlist():
             try: 
-                self.convert(path, self.saveAddr.get()+'/'+self.getFileName(path)+'.rpy')        
+                c = Converter(path)
+                texts = c.generate_rpy_elements()
+                cnt = len(texts)
+                for i in range(cnt):
+                    self.convert(path, self.saveAddr.get()+'/'+self.getFileName(path)+'_'+(str)(i+1)+'.rpy', texts[i], c)
             except ConvertException as err:
                 success_flag = False
                 showerror("转换错误", err.msg)

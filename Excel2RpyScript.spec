@@ -4,7 +4,7 @@ block_cipher = None
 
 
 a = Analysis(['app.py'],
-             pathex=['D:\\Github\\Excel2RpyScript'],
+             pathex=['F:\\WHR\\Excel2RpyScript'],
              binaries=[],
              datas=[],
              hiddenimports=[],

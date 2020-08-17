@@ -65,19 +65,23 @@ class Converter(object):
         解析文件
         :return RpyElement列表
         """
-        result = list()
+        cnt = 0
         try:
             wb = read_excel(self.file_path)
-
-            sheet1 = wb.sheet_by_index(0)  # 通过索引获取表格
-
-            for idx in range(7, sheet1.nrows):
-                data = [r.value for r in sheet1.row(idx)]
-                if not any(data):
-                    continue
-                result.append(data)
+            cnt = len(wb.sheets())
         except ParseFileException as err:
             raise err
+        result = [[]for i in range(cnt)]
+        wb = read_excel(self.file_path)
+        sheet = list()
+        for i in range(cnt):
+            sheet.append(wb.sheet_by_index(i))  # 通过索引获取表格
+        for i in range(cnt):
+            for idx in range(7, sheet[i].nrows):
+                data = [r.value for r in sheet[i].row(idx)]
+                if not any(data):
+                    continue
+                result[i].append(data)
         return result
 
     def parse_by_row(self, last_role, last_mode, row_data):
@@ -136,10 +140,13 @@ class Converter(object):
     def generate_rpy_elements(self):
         current_role = None
         current_mode = None
-        texts = list()
-        for row in self.parse_file():
-            current_mode, current_role, text = self.parse_by_row(current_role, current_mode, row)
-            texts.append(text)
+        tmp = self.parse_file()
+        cnt = len(tmp)
+        texts = [[]for i in range(cnt)]
+        for i in range(cnt):
+            for row in tmp[i]:
+                current_mode, current_role, text = self.parse_by_row(current_role, current_mode, row)
+                texts[i].append(text)
         return texts
 
     @classmethod
