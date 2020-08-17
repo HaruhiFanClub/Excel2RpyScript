@@ -3,46 +3,59 @@
     Rpy游戏的基本元素
 """
 from corelib.exception import RenderException
-from model import RpyElement, Trigger
+from model import RpyElement
 
-TEXT_TEMPLATE = "{character}\"{text}\""  # 对话模板
-CHARACTER_TEMPLATE = "define {name} = Character('{role}}', color=\"{color}\")"  # 角色模板
+ROLE_TEMPLATE = "define {name} = Character('{role}', color=\"{color}\")"  # 角色模板
 
 
 # 对话
-class Text(RpyElement, Trigger):
+class Text(RpyElement):
 
-    def __init__(self, text, character, cmd=''):
+    def __init__(self, text, role, triggers=None):
         """
         :param text: 文本
-        :param character: 角色
-        :param cmd: 指令
+        :param role: 角色
+        @:param triggers: 触发器：背景、音乐等等改变
         """
-        super(Text).__init__(cmd)
         self.text = text
-        self.character = character
+        self.role = role
+        self.triggers = triggers or list()
 
-    def render(self):
-        return TEXT_TEMPLATE.format(character=self.character.name, text=self.text)
+    def render(self, mode='nvl'):
+        # result = [t.render() for t in self.triggers]
+        result = []
+        if self.role:
+            result.append("{character}{text}".format(character=self.role.pronoun, text=self.text))
+        elif mode == 'nvl':
+            result.append("{character}{text}".format(character="narrator_nvl", text=self.text))
+        elif mode == 'adv':
+            result.append("{character}{text}".format(character="narrator_adv", text=self.text))
+        return "\n".join(result)
+
+    def add_triggers(self, *triggers):
+        if not self.triggers:
+            self.triggers = triggers
+        else:
+            self.triggers += triggers
 
 
 # 角色
-class Character(RpyElement):
+class Role(RpyElement):
 
-    def __init__(self, name, role, img, color):
+    def __init__(self, pronoun, name, color=None):
         """
-        :param name: 代称
-        :param role: 角色名
-        :param img: 图像类
+        :param pronoun: 代称
+        :param name: 角色名
         :param color: 颜色
         """
+        self.pronoun = pronoun
         self.name = name
-        self.role = role
-        self.img = img
-        self.color = color
+        self.color = color or "#c8c8ff"
 
     def render(self):
-        return CHARACTER_TEMPLATE.format(name=self.name, role=self.role, color=self.color)
+        if not self.name:
+            return ""
+        return ROLE_TEMPLATE.format(name=self.pronoun, role=self.name, color=self.color)
 
 
 # 图像
@@ -68,9 +81,9 @@ class Image(RpyElement):
 
     def show(self):
         if self.position:
-            return "show {name}".format(name=self.name)
-        else:
             return "show {name} at {position}".format(name=self.name, position=self.position)
+        else:
+            return "show {name}".format(name=self.name)
 
     def render(self):
         if self.cmd == 'show':
@@ -93,7 +106,7 @@ class Transition(RpyElement):
         self.style = style
 
     def render(self):
-        return "with {}".format(self.style)
+        return "with {}".format(self.style) if self.style else ""
 
 
 # 音效
@@ -105,10 +118,17 @@ class Audio(RpyElement):
         :param cmd: 指令
         :param args: 参数 fadeout/fadein: 音乐的淡入淡出  next_audio:下一个音效
         """
-        self.name = name
+        if isinstance(name, float):
+            self.name = str(int(name))
+        elif isinstance(name, int):
+            self.name = str(name)
+        else:
+            self.name = name
+        if self.name.split(".")[-1].lower() != 'mp3':
+            self.name += ".mp3"
         self.cmd = cmd
-        self.fadeout = args.get("fadeout", 0)
-        self.fadein = args.get("fadein", 0)
+        self.fadeout = args.get("fadeout", 0.5)
+        self.fadein = args.get("fadein", 0.5)
         self.next_audio = args.get("next_audio")
 
     # 循环播放音乐
@@ -130,9 +150,13 @@ class Audio(RpyElement):
     def sound(self):
         return "play sound \"{}\"".format(self.name)
 
+    # 不会循环播放
+    def loop(self):
+        return self.sound() + " loop"
+
     # 停止播放音乐
     def stop(self):
-        return "stop \"{}\"".format(self.name)
+        return "stop music"
 
     def render(self):
         if self.cmd == 'play':
@@ -145,7 +169,28 @@ class Audio(RpyElement):
             return self.sound()
         elif self.cmd == 'stop':
             return self.stop()
+        elif self.cmd == 'loop':
+            return self.loop()
         else:
             raise RenderException("不存在的Audio指令:{}".format(self.cmd))
 
 
+class Mode(RpyElement):
+
+    def __init__(self, mode):
+        self.mode = mode
+
+    def render(self):
+        if self.mode in ['nvl', 'adv']:
+            return ''
+        else:
+            return 'nvl clear'
+
+
+# 自定义指令
+class Command(RpyElement):
+    def __init__(self, cmd):
+        self.cmd = cmd
+
+    def render(self):
+        return self.cmd

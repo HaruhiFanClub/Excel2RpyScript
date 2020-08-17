@@ -22,3 +22,17 @@ class RenderException(Exception):
     def __init__(self, msg):
         super(RenderException, self).__init__(msg)
         self.msg = msg
+
+
+class ConvertException(Exception):
+
+    def __init__(self, msg):
+        super(ConvertException, self).__init__(msg)
+        self.msg = msg
+
+
+class SaveFileException(Exception):
+
+    def __init__(self, msg):
+        super(SaveFileException, self).__init__(msg)
+        self.msg = msg
