@@ -138,7 +138,6 @@ class Converter(object):
     def generate_rpy_elements(self):
         current_role = None
         current_mode = None
-        tmp = None
         try:
             tmp = self.parse_file()
         except ParseFileException as err:
