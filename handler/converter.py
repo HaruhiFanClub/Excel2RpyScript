@@ -7,6 +7,8 @@ from corelib.exception import ParseFileException
 from model.element import Text, Image, Transition, Audio, Role, Mode, Command
 from tools.excel import read_excel
 
+SPECIAL_CHAR = ['\\','%','{','}']
+
 ElementMapping = {
     "文本": Text,
     "立绘": Image,
@@ -85,6 +87,17 @@ class Converter(object):
     def parse_by_row(self, last_role, last_mode, row_data):
         # 当前角色、对话文本
         current_role_name, text = row_data[0], row_data[1]
+        l_text = (list)(text)
+        for n_char in SPECIAL_CHAR:
+            flg = True
+            for i, n_ele in enumerate(l_text):
+                if n_ele == n_char and flg:
+                    l_text.insert(i, '\\')
+                    flg = False
+                else:
+                    flg = True
+        text = ''.join(l_text)
+
         # 音乐、立绘、换页、背景、备注、模式、音效、转场、特殊效果
         music, character, change_page, background, remark, mode, sound, transition, _ = row_data[18:]
         # nvl模式

@@ -10,7 +10,7 @@ label start:
     show haruhi 1 at left
     show kyon 1 at right
     with dissolve
-    narrator_nvl"喂，你们知道肾上腺素这种东西吗？"
+    narrator_nvl"喂，你们知道\%\%\%\\\\\\\\\\\\\\\%\%\%\%肾上腺素这种东西吗？"
     
     narrator_nvl"没错，就是那种当人遭遇某种突如其来的刺激时才会分泌，可以使人呼吸加快、心跳加速、瞳孔放大，激发身体潜能好应对可能发生的事情的那种激素。"
     
