@@ -25,11 +25,11 @@ class Text(RpyElement):
         # result = [t.render() for t in self.triggers]
         result = []
         if self.role:
-            result.append("{character}{text}".format(character=self.role.pronoun, text=self.text))
+            result.append("{character}{text}".format(character=self.role.pronoun, text="\"{}\"".format(self.text)))
         elif mode == 'nvl':
-            result.append("{character}{text}".format(character="narrator_nvl", text=self.text))
+            result.append("{character}{text}".format(character="narrator_nvl", text="\"{}\"".format(self.text)))
         elif mode == 'adv':
-            result.append("{character}{text}".format(character="narrator_adv", text=self.text))
+            result.append("{character}{text}".format(character="narrator_adv", text="\"{}\"".format(self.text)))
         return "\n".join(result)
 
     def add_triggers(self, *triggers):
