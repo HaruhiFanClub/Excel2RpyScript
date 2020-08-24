@@ -1,11 +1,16 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 import base64
+import webbrowser
 from io import BytesIO
-from tkinter import Tk, Text, PhotoImage, Canvas
+from tkinter import Tk, Text, PhotoImage, Canvas, Menu, messagebox
 from tkinter.messagebox import showerror, showinfo
 from tkinter.ttk import Frame, Style, Entry, Combobox, Button, Label
 from tkinter import filedialog
+
+from pip._vendor import requests
+
+from const import CURRENT_VERSION
 from corelib.exception import ConvertException, SaveFileException
 from handler.converter import Converter
 from handler.parser import Parser
@@ -60,6 +65,13 @@ class Application_ui(Frame):
         self.InputLabel = Label(self.top, text='输入设置：', style='InputLabel.TLabel')
         self.InputLabel.place(relx=0.066, rely=0.723, relwidth=0.107, relheight=0.05)
 
+        menubar = Menu(self.top)
+        filemenu = Menu(menubar, tearoff=0)  # tearoff意为下拉
+        menubar.add_cascade(label='帮助', menu=filemenu)
+        filemenu.add_command(label='视频教程', command=self.open_help_url)
+        filemenu.add_command(label='检查更新', command=self.check_for_update)
+
+        self.top.config(menu=menubar)
 
 class Application(Application_ui):
     # 这个类实现具体的事件处理回调函数。界面生成代码在Application_ui中。
@@ -136,10 +148,31 @@ class Application(Application_ui):
             self.saveAddr.delete('0', 'end')
             self.Text.delete('0.0', 'end')
 
+    def open_url(self, url):
+        webbrowser.open(url, new=0)
+
+    def open_help_url(self, event=None):
+        self.open_url("https://www.bilibili.com/video/BV1gZ4y1K7Y9")
+
+    def check_for_update(self, event=None):
+        try:
+            resp = requests.get("https://api.github.com/repos/HaruhiFanClub/Excel2RpyScript/releases/latest", timeout=2).json()
+        except Exception as ex:
+            showinfo("网络连接失败", "检查新版本失败，请检查网络!")
+            return
+        if resp['tag_name'] == CURRENT_VERSION:
+            showinfo("检测成功", "当前已经是最新版本!")
+        else:
+            confirm_download = self.showConfirmModal("检查到新版本", "当前版本：{0}  最新版本：{1}, 是否前往{2}下载？"
+                                                     .format(CURRENT_VERSION, resp['tag_name'], resp['html_url']))
+            if confirm_download:
+                self.open_url(resp['html_url'])
+
+    def showConfirmModal(self, title, message):
+        return messagebox.askokcancel(title, message)
 
 if __name__ == "__main__":
     top = Tk()
-    # top.iconbitmap('sos.ico')
     top.iconphoto(False, PhotoImage(data=base64.b64decode(haruhi_gif_data)))
     Application(top).mainloop()
     try:
