@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 from collections import namedtuple
 
-from const.parser_setting import EXCEL_PARSE_START_ROW
+from const.parser_setting import EXCEL_PARSE_START_ROW, EXCEL_PARSE_START_COL
 from corelib.exception import ParseFileException
 from tools.excel import read_excel
 
@@ -46,5 +46,8 @@ class Parser(object):
             data = [r.value for r in sheet.row(i)]
             if not any(data):
                 continue
+            if len(data) < EXCEL_PARSE_START_COL:
+                # 补全数据
+                data.extend(["" * (EXCEL_PARSE_START_COL - len(data))])
             result.append(data)
         return result

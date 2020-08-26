@@ -12,7 +12,8 @@ ElementColNumMapping = {
     'mode': 23,
     'sound': 24,
     'transition': 25,
-    'voice': 26,
+    'special': 26,
+    'voice': 27,
 }
 
 # 元素映射

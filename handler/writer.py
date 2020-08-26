@@ -23,7 +23,7 @@ class RpyFileWriter(object):
                 if rpy_element.transition:
                     f.write(rpy_element.transition.render() + '\n')
                 if rpy_element.voice:
-                    f.write(rpy_element.transition.voice() + '\n')
+                    f.write(rpy_element.voice.render() + '\n')
                 if rpy_element.text:
                     if last_voice and last_voice.sustain:
                         f.write("voice sustain\n")
