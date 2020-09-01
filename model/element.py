@@ -25,11 +25,11 @@ class Text(RpyElement):
         # result = [t.render() for t in self.triggers]
         result = []
         if self.role:
-            result.append("{character} {text}".format(character=self.role.pronoun, text="\"{}\"".format(self.text)))
+            result.append("{character}{text}".format(character=self.role.pronoun, text=self.text))
         elif mode == 'nvl':
-            result.append("{character} {text}".format(character="narrator_nvl", text="\"{}\"".format(self.text)))
+            result.append("{character}{text}".format(character="narrator_nvl", text=self.text))
         elif mode == 'adv':
-            result.append("{character} {text}".format(character="narrator_adv", text="\"{}\"".format(self.text)))
+            result.append("{character}{text}".format(character="narrator_adv", text=self.text))
         return "\n".join(result)
 
     def add_triggers(self, *triggers):
@@ -73,10 +73,7 @@ class Image(RpyElement):
 
     # 当某个角色离开但场景不变化时，才需要使用hide
     def hide(self):
-        if not self.name:
-            return ""
-        else:
-            return "hide {name}".format(name=self.name)
+        return "hide {name}".format(name=self.name)
 
     # 清除所有图像并显示了一个背景图像
     def scene(self):
@@ -129,7 +126,6 @@ class Audio(RpyElement):
             self.name = name
         if self.name.split(".")[-1].lower() != 'mp3':
             self.name += ".mp3"
-        self.name = "audio/" + self.name
         self.cmd = cmd
         self.fadeout = args.get("fadeout", 0.5)
         self.fadein = args.get("fadein", 0.5)
@@ -190,14 +186,6 @@ class Mode(RpyElement):
         else:
             return 'nvl clear'
 
-
-class Voice(RpyElement):
-    def __init__(self, name, sustain=False):
-        self.name = name
-        self.sustain = sustain
-
-    def render(self):
-        return 'voice "{}"'.format(self.name)
 
 # 自定义指令
 class Command(RpyElement):
