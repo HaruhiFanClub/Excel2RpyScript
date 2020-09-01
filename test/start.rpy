@@ -2,6 +2,7 @@ define role1 = Character('春日', color="#c8c8ff")
 define role2 = Character('阿虚', color="#c8c8ff")
 define narrator_nvl = Character(None, kind=nvl)
 define narrator_adv = Character(None, kind=adv)
+define config.voice_filename_format = "audio/{filename}"
 
 label start:
 play music "audio/19.mp3"
@@ -10,7 +11,7 @@ show kyon 1 at right
 scene bg34
 with dissolve
 narrator_nvl "\"喂，你们知道肾上腺素这种东西吗？\""
-voice test
+voice "test"
 narrator_nvl "\"没错，就是那种当人遭遇某种突如其来的刺激时才会分泌，可以使人呼吸加快、心跳加速、瞳孔放大，激发身体潜能好应对可能发生的事情的那种激素。\""
 narrator_nvl "\"如果现在我的身上有那么一个用来测量这种激素浓度的仪器，那么上面的数字恐怕一定是在不断地飙升的吧——\""
 nvl clear
@@ -28,7 +29,7 @@ with dissolve
 narrator_nvl "\"包裹在右手上的外套一直摩擦着粗糙的岩壁，回音在隧道里相互叠加不断传递 ，最终汇聚成了一股丝毫都不悦耳、反而让人愈加烦躁的声音。 \""
 narrator_nvl "\"如果这是一个恐怖游戏的关卡，那么我一定要提名它拿今年科隆游戏展的最佳恐怖游戏配音奖——如果有这个奖项的话。\""
 play music "audio/20.mp3"
-voice test
+voice "test"
 narrator_nvl "\"就在我试图用一些轻松一点的想法冲淡自己的紧张，尽量不让自己在逃出去之前就被自己的肾上腺素毒死之时，我那紧紧握着春日右手的左手，又一次感受到了来自春日那微微地握力。 \""
 voice sustain
 narrator_nvl "\"不仅是我，就连平日里元气十足、坐镇北高文学部部室四处征伐的团长大人，此刻也通过手心里微微渗出的汗滴来委婉地告诉我她的不安。\""
