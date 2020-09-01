@@ -2,6 +2,7 @@ define role1 = Character('春日', color="#c8c8ff")
 define role2 = Character('阿虚', color="#c8c8ff")
 define narrator_nvl = Character(None, kind=nvl)
 define narrator_adv = Character(None, kind=adv)
+define config.voice_filename_format = "audio/{filename}"
 
 label Sheet2:
 play music "audio/19.mp3"

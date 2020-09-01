@@ -197,7 +197,7 @@ class Voice(RpyElement):
         self.sustain = sustain
 
     def render(self):
-        return 'voice {}'.format(self.name)
+        return 'voice "{}"'.format(self.name)
 
 # 自定义指令
 class Command(RpyElement):
