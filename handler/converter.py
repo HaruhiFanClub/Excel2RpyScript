@@ -1,40 +1,57 @@
-#!/usr/bin/env python
-# -*- coding:utf-8 -*-
+# encoding: utf-8
+
 """
     将Excel中的数据转化为rpy中的对象
 """
-from collections import namedtuple
+from corelib.exception import ParseFileException
+from model.element import Text, Image, Transition, Audio, Role, Mode, Command
+from tools.excel import read_excel
 
-from const.converter_setting import ElementColNumMapping, PositionMapping, ImageCmdMapping, TransitionMapping, \
-    ReplaceCharacterMapping
-from model.element import Text, Image, Transition, Audio, Role, Command, Voice
+ElementMapping = {
+    "文本": Text,
+    "立绘": Image,
+    "背景": Image,
+    "转场": Transition,
+    "音效": Audio,
+}
 
-SheetConvertResult = namedtuple('SheetConvertResult', ['label', 'data'])
+PositionMapping = {
+    "left": "left",
+    "right": "right",
+    "mid": "center",
+    "truecenter": "truecenter",
+}
 
-RowConvertResult = namedtuple('RowConvertResult',
-                              ['role',  # 角色
-                               'mode',  # 模式
-                               'text',  # 文本
-                               'music',  # 音乐
-                               'character',  # 立绘
-                               'change_page',  # 换页
-                               'background',  # 背景
-                               'remark',  # 备注
-                               'sound',  # 音效
-                               'transition',  # 转场
-                               'voice'  # 语音
-                               ])
+ImageCmdMapping = {
+    "hide": "hide",
+}
+
+TransitionMapping = {
+    "溶解": "dissolve",
+    "褪色": "fade",
+    "闪白": "Fade(0.1,0.0,0.5,color=\"#FFFFFF\")",
+    "像素化": "pixellate",
+    "横向振动": "hpunch",
+    "纵向振动": "vpunch",
+    "百叶窗": "blinds",
+    "网格覆盖": "squares",
+    "擦除": "wipeleft",
+    "滑入": "slideleft",
+    "滑出": "slideawayleft",
+    "推出": "pushright",
+}
+
+SoundCmdMapping = {
+    "循环": "loop"
+}
 
 
 class Converter(object):
 
-    def __init__(self, parser):
-        self.parser = parser
+    def __init__(self, file_path):
+        self.file_path = file_path
         self.roles = list()
         self.role_name_mapping = dict()
-        self.current_mode = 'nvl'
-        self.current_role = Role("narrator_nvl", "None")
-        self.characters = list()
 
     def add_role(self, name):
         role = self.role_name_mapping.get(name)
@@ -43,16 +60,87 @@ class Converter(object):
             self.role_name_mapping[name] = role
         return role
 
-    def generate_rpy_elements(self):
-        result = []
-        parsed_sheets = self.parser.get_parsed_sheets()
-        for idx, parsed_sheet in enumerate(parsed_sheets):
-            if idx == 0:
-                label = 'start'
-            else:
-                label = parsed_sheet.name
-            result.append(SheetConvertResult(label=label, data=self.parse_by_sheet(parsed_sheet.row_values)))
+    def parse_file(self):
+        """
+        解析文件
+        :return RpyElement列表
+        """
+        result = list()
+        try:
+            wb = read_excel(self.file_path)
+
+            sheet1 = wb.sheet_by_index(0)  # 通过索引获取表格
+
+            for idx in range(7, sheet1.nrows):
+                data = [r.value for r in sheet1.row(idx)]
+                if not any(data):
+                    continue
+                result.append(data)
+        except ParseFileException as err:
+            raise err
         return result
+
+    def parse_by_row(self, last_role, last_mode, row_data):
+        # 当前角色、对话文本
+        current_role_name, text = row_data[0], row_data[1]
+        # 音乐、立绘、换页、背景、备注、模式、音效、转场、特殊效果
+        music, character, change_page, background, remark, mode, sound, transition, _ = row_data[18:]
+        # nvl模式
+        if mode == 'nvl':
+            current_mode = 'nvl'
+        elif mode == 'adv':
+            current_mode = 'adv'
+        else:
+            current_mode = last_mode
+        # 角色信息
+        if last_role and current_role_name == "":
+            current_role = last_role
+        elif current_role_name not in ["", "旁白"]:
+            current_role = self.add_role(current_role_name)
+        elif current_mode == 'adv':
+            current_role = Role("narrator_adv", "None")
+        elif current_mode == 'nvl':
+            current_role = Role("narrator_nvl", "None")
+        else:
+            current_role = None
+
+        text = Text(text, current_role)
+        text.add_triggers(Mode(current_mode))
+        # 音乐信息
+        if music:
+            cmd = "stop" if music == "none" else "play"
+            text.add_triggers(Audio(music, cmd))
+        # 背景信息
+        if background:
+            text.add_triggers(Image(background, "scene"))
+        # 立绘信息
+        if character:
+            characters = [Converter.generate_character(ch) for ch in character.split(";")]
+            text.add_triggers(*characters)
+        # 音效
+        if sound:
+            if sound.startswith('循环'):
+                text.add_triggers(Audio(sound.replace('循环', ''), 'loop'))
+            else:
+                cmd = "stop" if sound == "stop" else "sound"
+                text.add_triggers(Audio(sound, cmd))
+        # 转场
+        if transition:
+            t_style = TransitionMapping.get(transition, "")
+            text.add_triggers(Transition(t_style))
+        # 换页
+        if change_page:
+            text.add_triggers(Command("nvl clear"))
+        return current_mode, current_role, text
+
+    def generate_rpy_elements(self):
+        current_role = None
+        current_mode = None
+        texts = list()
+        for row in self.parse_file():
+            current_mode, current_role, text = self.parse_by_row(current_role, current_mode, row)
+            texts.append(text)
+        return texts
 
     @classmethod
     def generate_character(cls, img_str):
@@ -62,138 +150,3 @@ class Converter(object):
             return Image(img_str.replace(last_word, "").strip(), "show", position)
         else:
             return Image(img_str.replace(last_word, "").strip(), ImageCmdMapping.get(last_word, "hide"))
-
-    def parse_by_sheet(self, values):
-        result = []
-        for row_value in values:
-            result.append(self.parse_by_row_value(row_value))
-        return result
-
-    def parse_by_row_value(self, row):
-        row_converter = RowConverter(row, self)
-        return row_converter.convert()
-
-
-class RowConverter(object):
-
-    def __init__(self, row, converter):
-        self.row = row
-        self.converter = converter
-
-    def convert(self):
-        return RowConvertResult(
-            role=self._converter_role(),
-            mode=self._converter_mode(),
-            text=self._converter_text(),
-            music=self._converter_music(),
-            character=self._converter_character(),
-            change_page=self._converter_change_page(),
-            background=self._converter_background(),
-            remark=self._converter_remark(),
-            sound=self._converter_sound(),
-            transition=self._converter_transition(),
-            voice=self._converter_voice()
-        )
-
-    def _converter_mode(self):
-        # 模式
-        mode = self.row[ElementColNumMapping.get('mode')]
-        if mode:
-            self.converter.current_mode = mode
-        return mode
-
-    def _converter_role(self):
-        # 角色
-        role_name = self.row[ElementColNumMapping.get('role_name')]
-        if role_name not in ["", "旁白"]:
-            self.converter.current_role = self.converter.add_role(role_name)
-        elif role_name == '' and self.converter.current_role:
-            return self.converter.current_role
-        else:
-            self.converter.current_role = Role("narrator_{}".format(self.converter.current_mode), "None")
-        return self.converter.current_role
-
-    def _converter_text(self):
-        # 文本
-        text = self.row[ElementColNumMapping.get('text')].replace("\n", "\\n")
-        if not text:
-            return None
-        replace_index_char = []
-        for idx, t in enumerate(text):
-            if ReplaceCharacterMapping.get(t):
-                replace_index_char.append((idx, t))
-
-        if replace_index_char:
-            new_text_list = list(text)
-            for idx, char in replace_index_char:
-                new_text_list[idx] = ReplaceCharacterMapping.get(char)
-            text = ''.join(new_text_list)
-        return Text(text, self.converter.current_role)
-
-    def _converter_music(self):
-        # 音乐
-        music = self.row[ElementColNumMapping.get('music')]
-        if not music:
-            return None
-        cmd = "stop" if music == "none" else "play"
-        return Audio(music, cmd)
-
-    def _converter_background(self):
-        # 背景
-        background = self.row[ElementColNumMapping.get('background')]
-        if not background:
-            return None
-        return Image(background, "scene")
-
-    def _converter_character(self):
-        # 立绘
-        character_str = self.row[ElementColNumMapping.get('character')].strip()
-        if not character_str:
-            return []
-        characters = []
-        # 新立绘出现时回收旧立绘
-        for character in self.converter.characters:
-            characters.append(Image(character.name, 'hide'))
-        new_characters = [Converter.generate_character(ch) for ch in character_str.split(";")]
-        self.converter.characters = new_characters
-        characters.extend(new_characters)
-        return characters
-
-    def _converter_remark(self):
-        pass
-
-    def _converter_sound(self):
-        # 音效
-        sound = self.row[ElementColNumMapping.get('sound')]
-        if not sound:
-            return None
-        if sound.startswith('循环'):
-            return Audio(sound.replace('循环', ''), 'loop')
-        else:
-            cmd = "stop" if sound == "stop" else "sound"
-            return Audio(sound, cmd)
-
-    def _converter_transition(self):
-        # 转场
-        transition = self.row[ElementColNumMapping.get('transition')]
-        if not transition:
-            return None
-        t_style = TransitionMapping.get(transition, "")
-        return Transition(t_style)
-
-    def _converter_change_page(self):
-        # 换页
-        change_page = self.row[ElementColNumMapping.get('change_page')]
-        if not change_page:
-            return None
-        return Command("nvl clear")
-
-    def _converter_voice(self):
-        voice_str = self.row[ElementColNumMapping.get('voice')].strip()
-        if not voice_str:
-            return None
-        if voice_str.split(" ")[-1] == "sustain":
-            voice_name = voice_str.split(" ")[0]
-            return Voice(voice_name, sustain=True)
-        else:
-            return Voice(voice_str)
