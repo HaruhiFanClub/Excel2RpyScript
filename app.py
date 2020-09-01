@@ -2,13 +2,12 @@
 # -*- coding:utf-8 -*-
 import base64
 import webbrowser
-from io import BytesIO
-from tkinter import Tk, Text, PhotoImage, Canvas, Menu, messagebox
+from tkinter import Tk, Text, PhotoImage, Menu, messagebox, END
 from tkinter.messagebox import showerror, showinfo
 from tkinter.ttk import Frame, Style, Entry, Combobox, Button, Label
 from tkinter import filedialog
 
-from pip._vendor import requests
+import requests
 
 from const import CURRENT_VERSION
 from corelib.exception import ConvertException, SaveFileException
@@ -128,7 +127,7 @@ class Application(Application_ui):
                                                  filetypes=[("Excel-2007 file", "*.xlsx"), ("Excel-2003 file", "*.xls"),
                                                             ("all", "*.*")])
         for line in file_paths:
-            self.Text.insert('0.0', line + '\n')
+            self.Text.insert(END, line + '\n')
         self.comboEvent()
 
     def ConvertButton_Cmd(self, event=None):
@@ -158,7 +157,8 @@ class Application(Application_ui):
         try:
             resp = requests.get("https://api.github.com/repos/HaruhiFanClub/Excel2RpyScript/releases/latest", timeout=2).json()
         except Exception as ex:
-            showinfo("网络连接失败", "检查新版本失败，请检查网络!")
+            self.Text.insert(END, "检查更新失败：{}\n请直接到https://github.com/HaruhiFanClub/Excel2RpyScript/releases查看最新版本\n")
+            showinfo("网络连接失败", "\n检查新版本信息失败!\n".format(ex))
             return
         if resp['tag_name'] == CURRENT_VERSION:
             showinfo("检测成功", "当前已经是最新版本!")
