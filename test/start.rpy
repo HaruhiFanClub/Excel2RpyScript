@@ -37,13 +37,12 @@ narrator_adv "\"而这时不时传来的、看似微弱但却异常敏感的身�
 narrator_adv "\"从刚刚开始，我们就一直拉着手——像是在孤岛那会儿一样，只不过这次面对的，似乎是更加未知的前景。\""
 narrator_adv "\"我对春日报以相同的回应，也握了握她的手。\""
 narrator_adv "\"老实说，我并不怀疑春日这难得的、稳扎稳打的脱险方法，更坚信走出去只是迟早的事情——但不知为什么，不安和焦虑，却顽固地笼罩在我心里这个看似光明的信念上，挥之不去。\""
-stop music
-hide haruhi 1
-hide kyon 5
-show haruhi 3 at left
-show kyon 5 at center
-stop music
-role1 "\"啊！ \""
+menu:
+    "跳转到sheet2":
+        jump sheet2
+
+    "跳转到sheet3":
+        jump sheet3
 hide haruhi 3
 hide kyon 5
 show haruhi 3 at left

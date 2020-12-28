@@ -199,6 +199,13 @@ class Voice(RpyElement):
     def render(self):
         return 'voice "{}"'.format(self.name)
 
+
+class Menu(RpyElement):
+    def __init__(self, label, target):
+        self.label = label
+        self.target = target
+
+
 # 自定义指令
 class Command(RpyElement):
     def __init__(self, cmd):

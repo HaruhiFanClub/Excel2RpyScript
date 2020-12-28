@@ -7,7 +7,7 @@ from collections import namedtuple
 
 from const.converter_setting import ElementColNumMapping, PositionMapping, ImageCmdMapping, TransitionMapping, \
     ReplaceCharacterMapping
-from model.element import Text, Image, Transition, Audio, Role, Command, Voice
+from model.element import Text, Image, Transition, Audio, Role, Command, Voice, Menu
 
 SheetConvertResult = namedtuple('SheetConvertResult', ['label', 'data'])
 
@@ -22,7 +22,8 @@ RowConvertResult = namedtuple('RowConvertResult',
                                'remark',  # 备注
                                'sound',  # 音效
                                'transition',  # 转场
-                               'voice'  # 语音
+                               'voice',  # 语音
+                               'menu'  # 条件跳转
                                ])
 
 
@@ -92,7 +93,8 @@ class RowConverter(object):
             remark=self._converter_remark(),
             sound=self._converter_sound(),
             transition=self._converter_transition(),
-            voice=self._converter_voice()
+            voice=self._converter_voice(),
+            menu=self._converter_menu(),
         )
 
     def _converter_mode(self):
@@ -202,3 +204,23 @@ class RowConverter(object):
             return Voice(voice_name, sustain=True)
         else:
             return Voice(voice_str)
+
+    def _converter_menu(self):
+        # 分支条件的label写在对话文本列
+        menu = self.row[ElementColNumMapping.get('menu')]
+        if not menu:
+            return None
+        text = self.row[ElementColNumMapping.get('text')].replace("\n", "\\n")
+        if not text:
+            return None
+        replace_index_char = []
+        for idx, t in enumerate(text):
+            if ReplaceCharacterMapping.get(t):
+                replace_index_char.append((idx, t))
+
+        if replace_index_char:
+            new_text_list = list(text)
+            for idx, char in replace_index_char:
+                new_text_list[idx] = ReplaceCharacterMapping.get(char)
+            text = ''.join(new_text_list)
+        return Menu(label=text, target=menu)
