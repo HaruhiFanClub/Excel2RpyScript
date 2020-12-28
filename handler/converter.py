@@ -82,8 +82,8 @@ class RowConverter(object):
 
     def convert(self):
         return RowConvertResult(
-            role=self._converter_role(),
             mode=self._converter_mode(),
+            role=self._converter_role(),
             text=self._converter_text(),
             music=self._converter_music(),
             character=self._converter_character(),
@@ -106,11 +106,16 @@ class RowConverter(object):
         # 角色
         role_name = self.row[ElementColNumMapping.get('role_name')]
         if role_name not in ["", "旁白"]:
+            # 当其他角色出现时，重置模式为nvl
             self.converter.current_role = self.converter.add_role(role_name)
-        elif role_name == '' and self.converter.current_role:
+        elif role_name == "" and self.converter.current_mode == "":
             return self.converter.current_role
         else:
             self.converter.current_role = Role("narrator_{}".format(self.converter.current_mode), "None")
+        # elif role_name != "":
+        #     # 当其他角色出现时，重置模式为nvl
+        #     self.converter.current_role = self.converter.add_role(role_name)
+        #     self.converter.current_mode = "nvl"
         return self.converter.current_role
 
     def _converter_text(self):
