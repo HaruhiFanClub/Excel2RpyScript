@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+MENU_TEMPLATE = "    \"{label}\":\n        jump {target}\n"
+
+
 class RpyFileWriter(object):
 
     @classmethod
@@ -11,7 +16,16 @@ class RpyFileWriter(object):
             f.write("define config.voice_filename_format = \"audio/{filename}\"\n")
             f.write("\nlabel {}:\n".format(res.label))
             last_voice = None
+            current_menus = []
             for rpy_element in res.data:
+                if rpy_element.menu:
+                    current_menus.append(rpy_element.menu)
+                    continue
+                if current_menus:
+                    f.write("menu:\n" + "\n".join(
+                        [MENU_TEMPLATE.format(label=m.label, target=m.target) for m in current_menus]))
+                    current_menus.clear()
+                    continue
                 if rpy_element.music:
                     f.write(rpy_element.music.render() + '\n')
                 if rpy_element.character:

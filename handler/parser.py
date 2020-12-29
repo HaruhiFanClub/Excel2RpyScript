@@ -48,6 +48,7 @@ class Parser(object):
                 continue
             if len(data) < EXCEL_PARSE_START_COL:
                 # 补全数据
-                data.extend(["" * (EXCEL_PARSE_START_COL - len(data))])
+                data.extend(["" for i in range(EXCEL_PARSE_START_COL - len(data))])
+            assert len(data) == EXCEL_PARSE_START_COL
             result.append(data)
         return result
