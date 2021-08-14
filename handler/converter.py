@@ -23,7 +23,8 @@ RowConvertResult = namedtuple('RowConvertResult',
                                'sound',  # 音效
                                'transition',  # 转场
                                'voice',  # 语音
-                               'menu'  # 条件跳转
+                               'menu',  # 条件跳转
+                               'side_character'  # 头像
                                ])
 
 
@@ -36,6 +37,7 @@ class Converter(object):
         self.current_mode = 'nvl'
         self.current_role = Role("narrator_nvl", "None")
         self.characters = list()
+        self.side_characters = dict()
 
     def add_role(self, name):
         role = self.role_name_mapping.get(name)
@@ -95,6 +97,7 @@ class RowConverter(object):
             transition=self._converter_transition(),
             voice=self._converter_voice(),
             menu=self._converter_menu(),
+            side_character=self._converter_side_character(),
         )
 
     def _converter_mode(self):
@@ -122,7 +125,7 @@ class RowConverter(object):
 
     def _converter_text(self):
         # 文本
-        text = self.row[ElementColNumMapping.get('text')].replace("\n", "\\n")
+        text = str(self.row[ElementColNumMapping.get('text')]).replace("\n", "\\n")
         if not text:
             return None
         replace_index_char = []
@@ -154,7 +157,7 @@ class RowConverter(object):
 
     def _converter_character(self):
         # 立绘
-        character_str = self.row[ElementColNumMapping.get('character')].strip()
+        character_str = str(self.row[ElementColNumMapping.get('character')]).strip()
         if not character_str:
             return []
         characters = []
@@ -196,7 +199,7 @@ class RowConverter(object):
         return Command("nvl clear")
 
     def _converter_voice(self):
-        voice_str = self.row[ElementColNumMapping.get('voice')].strip()
+        voice_str = str(self.row[ElementColNumMapping.get('voice')]).strip()
         if not voice_str:
             return None
         if voice_str.split(" ")[-1] == "sustain":
@@ -210,7 +213,7 @@ class RowConverter(object):
         menu = self.row[ElementColNumMapping.get('menu')]
         if not menu:
             return None
-        text = self.row[ElementColNumMapping.get('text')].replace("\n", "\\n")
+        text = str(self.row[ElementColNumMapping.get('text')]).replace("\n", "\\n")
         if not text:
             return None
         replace_index_char = []
@@ -224,3 +227,11 @@ class RowConverter(object):
                 new_text_list[idx] = ReplaceCharacterMapping.get(char)
             text = ''.join(new_text_list)
         return Menu(label=text, target=menu)
+
+    def _converter_side_character(self):
+        # 对话框头像
+        character_str = str(self.row[ElementColNumMapping.get('side_character')]).strip()
+        if not character_str:
+            return None
+        self.converter.side_characters[self.converter.current_role.pronoun] = character_str
+        return None

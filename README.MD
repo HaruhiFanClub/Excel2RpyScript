@@ -29,3 +29,7 @@
     - fix [立绘回收 #20](https://github.com/HaruhiFanClub/Excel2RpyScript/issues/20)
     - fix [Nvl模式与adv模式的切换 #19](https://github.com/HaruhiFanClub/Excel2RpyScript/issues/19)
     - 去掉Exe文件的外部依赖
+
+- 0.2.4
+    - fix 条件选择在最后一行时无法读取
+    - 支持对话框头像
