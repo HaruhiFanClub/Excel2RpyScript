@@ -5,7 +5,7 @@
 from corelib.exception import RenderException
 from model import RpyElement
 
-ROLE_TEMPLATE = "define {name} = Character('{role}', color=\"{color}\")"  # 角色模板
+ROLE_TEMPLATE = "define {name} = Character('{role}', color=\"{color}\", image=\"{side_character}\")"  # 角色模板
 
 
 # 对话
@@ -55,7 +55,7 @@ class Role(RpyElement):
     def render(self):
         if not self.name:
             return ""
-        return ROLE_TEMPLATE.format(name=self.pronoun, role=self.name, color=self.color)
+        return ROLE_TEMPLATE.format(name=self.pronoun, role=self.name, color=self.color, side_character=self.pronoun)
 
 
 # 图像

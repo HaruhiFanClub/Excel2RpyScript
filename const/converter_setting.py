@@ -15,6 +15,7 @@ ElementColNumMapping = {
     'special': 26,
     'voice': 27,
     'menu': 28,
+    'side_character': 29,
 }
 
 # 元素映射

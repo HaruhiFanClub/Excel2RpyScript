@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 MENU_TEMPLATE = "    \"{label}\":\n        jump {target}\n"
+SIDE_CHARACTER_TEMPLATE = "image side {role_name} = \"{path}\"\n"
 
 
 class RpyFileWriter(object):
 
     @classmethod
-    def write_file(cls, output_dir, res, role_name_mapping):
+    def write_file(cls, output_dir, res, role_name_mapping, role_side_character_mapping):
         output_path = output_dir + "/" + res.label + '.rpy'
         with open(output_path, 'w', encoding='utf-8') as f:
             for k, v in role_name_mapping.items():
@@ -14,6 +15,8 @@ class RpyFileWriter(object):
             f.write("define narrator_nvl = Character(None, kind=nvl)\n")
             f.write("define narrator_adv = Character(None, kind=adv)\n")
             f.write("define config.voice_filename_format = \"audio/{filename}\"\n")
+            for k, v in role_side_character_mapping.items():
+                f.write(SIDE_CHARACTER_TEMPLATE.format(role_name=k, path=v))
             f.write("\nlabel {}:\n".format(res.label))
             last_voice = None
             current_menus = []
@@ -46,3 +49,7 @@ class RpyFileWriter(object):
                 if rpy_element.change_page:
                     f.write(rpy_element.change_page.render() + '\n')
                 last_voice = rpy_element.voice
+            if current_menus:
+                # fix menu在最后一行
+                f.write("menu:\n" + "\n".join(
+                    [MENU_TEMPLATE.format(label=m.label, target=m.target) for m in current_menus]))
