@@ -1,16 +1,22 @@
-define role1 = Character('春日', color="#c8c8ff")
-define role2 = Character('阿虚', color="#c8c8ff")
+define role1 = Character('aaa', color="#c8c8ff", image="role1")
+define role2 = Character('aaabv', color="#c8c8ff", image="role2")
+define role3 = Character('阿虚', color="#c8c8ff", image="role3")
+define role4 = Character('春日', color="#c8c8ff", image="role4")
+define role5 = Character('春日bbbb', color="#c8c8ff", image="role5")
 define narrator_nvl = Character(None, kind=nvl)
 define narrator_adv = Character(None, kind=adv)
 define config.voice_filename_format = "audio/{filename}"
+image side role1 = "images/haruhi 1.png"
 
 label Sheet2:
 play music "audio/19.mp3"
 hide haruhi 1
+hide kyon 5
 show haruhi 1 at left
 show kyon 1 at right
 scene bg34
 with dissolve
+voice "images/test1.jpg"
 narrator_nvl "\"sheet2 喂，你们知道肾上腺素这种东西吗？\""
 narrator_nvl "\"没错，就是那种当人遭遇某种突如其来的刺激时才会分泌，可以使人呼吸加快、心跳加速、瞳孔放大，激发身体潜能好应对可能发生的事情的那种激素。\""
 narrator_nvl "\"如果现在我的身上有那么一个用来测量这种激素浓度的仪器，那么上面的数字恐怕一定是在不断地飙升的吧——\""
@@ -41,7 +47,8 @@ hide kyon 5
 show haruhi 3 at left
 show kyon 5 at center
 stop music
-role1 "\"啊！ \""
+voice "images/test1.jpg"
+role2 "\"啊！ \""
 hide haruhi 3
 hide kyon 5
 show haruhi 3 at left
@@ -56,14 +63,14 @@ hide kyon 4
 show haruhi 1 at left
 show kyon 4 at center
 with dissolve
-role2 "\"你没事吧？！春日。 \""
+role3 "\"你没事吧？！春日。 \""
 hide haruhi 1
 hide kyon 4
 show haruhi 2 at center
 narrator_adv "\"借着手机屏幕的亮光，我勉强看清了她的表情——涨红了脸，流露出一股由惊慌、不满和似乎是害羞的情绪所组成的复杂表情。看样子她也快到极限了。 \""
 hide haruhi 2
 show haruhi 6 at center
-role1 "\"没，没事。\""
+role4 "\"没，没事。\""
 hide haruhi 6
 hide haruhi 1
 narrator_adv "\"只是不小心被石头绊了一下，\想不\%到竟\"然\"差点\'摔\'了{{下[[去。\""

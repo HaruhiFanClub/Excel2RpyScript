@@ -78,9 +78,9 @@ class Application(Application_ui):
     def __init__(self, master=None):
         Application_ui.__init__(self, master)
 
-    def convert(self, output_dir, res, role_name_mapping):
+    def convert(self, output_dir, res, role_name_mapping, role_side_character_mapping):
         try:
-            RpyFileWriter.write_file(output_dir, res, role_name_mapping)
+            RpyFileWriter.write_file(output_dir, res, role_name_mapping, role_side_character_mapping)
         except FileNotFoundError:
             raise SaveFileException("保存目录不存在")
 
@@ -137,8 +137,9 @@ class Application(Application_ui):
                 parser = Parser(path)
                 conveter = Converter(parser)
                 convert_results = conveter.generate_rpy_elements()
+                print(conveter.side_characters)
                 for res in convert_results:
-                    self.convert(self.saveAddr.get(), res, conveter.role_name_mapping)
+                    self.convert(self.saveAddr.get(), res, conveter.role_name_mapping, conveter.side_characters)
             except ConvertException as err:
                 success_flag = False
                 showerror("转换错误", err.msg)
