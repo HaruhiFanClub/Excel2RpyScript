@@ -46,6 +46,7 @@ class Converter(object):
             self.role_name_mapping[name] = role
         return role
 
+    #创建一个元组，存有工作表标签及对应工作表下的多行转换后数据
     def generate_rpy_elements(self):
         result = []
         parsed_sheets = self.parser.get_parsed_sheets()
@@ -54,7 +55,7 @@ class Converter(object):
                 label = 'start'
             else:
                 label = parsed_sheet.name
-            result.append(SheetConvertResult(label=label, data=self.parse_by_sheet(parsed_sheet.row_values)))
+            result.append(SheetConvertResult(label=label, data=self.parse_by_sheet(parsed_sheet.row_values, idx)))
         return result
 
     @classmethod
@@ -66,23 +67,35 @@ class Converter(object):
         else:
             return Image(img_str.replace(last_word, "").strip(), ImageCmdMapping.get(last_word, "hide"))
 
-    def parse_by_sheet(self, values):
+    #循环调用parse_by_row_value方法，返回拼接多行转换后信息的列表
+    def parse_by_sheet(self, values, sheet_index):
         result = []
-        for row_value in values:
-            result.append(self.parse_by_row_value(row_value))
+        current_role_name = None  # 用于跟踪最近的有效 role_name
+        for row_index, row_value in enumerate(values):
+            role_name = row_value[ElementColNumMapping.get('role_name')]
+            if role_name.strip():
+                current_role_name = role_name  # 更新最近的有效 role_name
+            else:
+                role_name = current_role_name  # 如果当前 role_name 为空，使用最近的有效值
+            result.append(self.parse_by_row_value(row_value, role_name, sheet_index, row_index))
         return result
 
-    def parse_by_row_value(self, row):
-        row_converter = RowConverter(row, self)
+    #调用RowConverter的convert方法，返回存有单行转换后信息的元组
+    def parse_by_row_value(self, row, role_name, sheet_index, row_index):
+        row_converter = RowConverter(row, self, role_name, sheet_index, row_index)
         return row_converter.convert()
 
 
 class RowConverter(object):
 
-    def __init__(self, row, converter):
+    def __init__(self, row, converter, role_name, sheet_index, row_index):
         self.row = row
         self.converter = converter
-
+        self.role_name = role_name  
+        self.row_index = row_index  
+        self.sheet_index = sheet_index
+    
+    #该方法返回存有单行转换后信息的元组
     def convert(self):
         return RowConvertResult(
             mode=self._converter_mode(),
@@ -202,6 +215,11 @@ class RowConverter(object):
         voice_str = str(self.row[ElementColNumMapping.get('voice')]).strip()
         if not voice_str:
             return None
+        
+        # 检查是否包含 "tts"
+        if voice_str.lower().strip() == "tts":
+            return Voice(f"{self.role_name}_sheet{self.sheet_index+1}_row{self.row_index+8}_synthesized.wav")
+        
         if voice_str.split(" ")[-1] == "sustain":
             voice_name = voice_str.split(" ")[0]
             return Voice(voice_name, sustain=True)
@@ -235,3 +253,6 @@ class RowConverter(object):
             return None
         self.converter.side_characters[self.converter.current_role.pronoun] = character_str
         return None
+
+    def _converter_voice_cmd(self):
+        pass

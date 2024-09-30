@@ -36,3 +36,8 @@ class SaveFileException(Exception):
     def __init__(self, msg):
         super(SaveFileException, self).__init__(msg)
         self.msg = msg
+
+class VoiceException(Exception):
+    def __init__(self, msg):
+        super(VoiceException, self).__init__(msg)
+        self.msg = msg

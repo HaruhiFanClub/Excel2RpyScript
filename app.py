@@ -10,11 +10,12 @@ from tkinter import filedialog
 import requests
 
 from const import CURRENT_VERSION
-from corelib.exception import ConvertException, SaveFileException
+from corelib.exception import ConvertException, SaveFileException, VoiceException
 from handler.converter import Converter
 from handler.parser import Parser
 from handler.writer import RpyFileWriter
 from tools.image_data import *
+from handler.tts import TTS
 
 
 class Application_ui(Frame):
@@ -55,6 +56,10 @@ class Application_ui(Frame):
         self.ConvertButton = Button(self.top, image=self.Haruhi_gif, command=self.ConvertButton_Cmd,
                                     style='ConvertButton.TButton')
         self.ConvertButton.place(relx=0.788, rely=0.7, relwidth=0.146, relheight=0.236)
+
+        self.style.configure('SynthesizeButton.TButton', font=('宋体', 9))
+        self.SynthesizeButton = Button(self.top, text='合成音频', command=self.synthesize_audio, style='SynthesizeButton.TButton')
+        self.SynthesizeButton.place(relx=0.5, rely=0.7, relwidth=0.146, relheight=0.073)
 
         self.style.configure('OutputLabel.TLabel', anchor='w', font=('宋体', 9))
         self.OutputLabel = Label(self.top, text='保存目录：', style='OutputLabel.TLabel')
@@ -137,6 +142,7 @@ class Application(Application_ui):
                 parser = Parser(path)
                 conveter = Converter(parser)
                 convert_results = conveter.generate_rpy_elements()
+                
                 print(conveter.side_characters)
                 for res in convert_results:
                     self.convert(self.saveAddr.get(), res, conveter.role_name_mapping, conveter.side_characters)
@@ -148,6 +154,24 @@ class Application(Application_ui):
             self.saveAddr.delete('0', 'end')
             self.Text.delete('0.0', 'end')
 
+    def synthesize_audio(self, event=None):
+        success_flag = True
+        for path in self.getTlist():
+            try:
+                parser = Parser(path)
+                conveter = Converter(parser)
+                convert_results = conveter.generate_rpy_elements()
+                tts = TTS(conveter)
+                parsed_sheets_tts = tts.filter_parsed_sheets_tts()
+                tts.synthesize_voice(parsed_sheets_tts)
+            except VoiceException as err:
+                success_flag = False
+                showerror("合成错误", err.msg)    
+            if success_flag:
+                showinfo("合成成功", "合成完成")
+                self.saveAddr.delete('0', 'end')
+                self.Text.delete('0.0', 'end')
+    
     def open_url(self, url):
         webbrowser.open(url, new=0)
 

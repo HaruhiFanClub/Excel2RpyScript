@@ -16,6 +16,7 @@ ElementColNumMapping = {
     'voice': 27,
     'menu': 28,
     'side_character': 29,
+    'voice_cmd':30,
 }
 
 # 元素映射
