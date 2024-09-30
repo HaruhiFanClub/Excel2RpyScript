@@ -123,17 +123,17 @@ class RowConverter(object):
     def _converter_role(self):
         # 角色
         role_name = self.row[ElementColNumMapping.get('role_name')]
-        if role_name not in ["", "旁白"]:
-            # 当其他角色出现时，重置模式为nvl
+        if role_name and role_name != "旁白":
+            # 当新的角色名出现时，切换到该角色
             self.converter.current_role = self.converter.add_role(role_name)
-        elif role_name == "" and self.converter.current_mode == "":
+            #self.converter.current_mode = "nvl"  # 可选：根据需要设置当前模式
+        elif role_name == "":
+            # 空角色名时，保持当前角色不变
             return self.converter.current_role
         else:
+            # 处理旁白角色或其他情况
             self.converter.current_role = Role("narrator_{}".format(self.converter.current_mode), "None")
-        # elif role_name != "":
-        #     # 当其他角色出现时，重置模式为nvl
-        #     self.converter.current_role = self.converter.add_role(role_name)
-        #     self.converter.current_mode = "nvl"
+        
         return self.converter.current_role
 
     def _converter_text(self):
