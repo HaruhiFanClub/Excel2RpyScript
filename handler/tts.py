@@ -3,7 +3,7 @@ from collections import namedtuple
 from const.converter_setting import ElementColNumMapping, PositionMapping, ImageCmdMapping, TransitionMapping, \
     ReplaceCharacterMapping
     
-from const.tts_setting import role_model_mapping, API_BASE_URL, voice_cmd_mapping, default_prompt_audio, default_prompt_text
+from const.tts_setting import TTSConfig
 
 import requests, os
 
@@ -12,6 +12,14 @@ class TTS(object):
         self.conveter = conveter
         self.parser = conveter.parser
         self.last_role_name = None
+        tts_config = TTSConfig()
+        self.role_model_mapping = tts_config.role_model_mapping
+        self.API_BASE_URL = tts_config.api_base_url
+        self.voice_cmd_mapping = tts_config.voice_cmd_mapping
+        self.default_prompt_text = tts_config.default_prompt_text
+        self.default_prompt_audio = tts_config.default_prompt_audio
+        
+        
         
     def filter_parsed_sheets_tts(self):
         parsed_sheets = self.parser.get_parsed_sheets()
@@ -56,17 +64,17 @@ class TTS(object):
         if role_name == self.last_role_name:
             return  # 如果角色名相同，则无需切换
         
-        models = role_model_mapping.get(role_name)
+        models = self.role_model_mapping.get(role_name)
         
         if models:
             gpt_model = models['gpt']
             sovits_model = models['sovits']
 
             # 切换到对应的GPT模型
-            requests.get(f"{API_BASE_URL['base']}set_gpt_weights?weights_path={gpt_model}")
+            requests.get(f"{self.API_BASE_URL['base']}set_gpt_weights?weights_path={gpt_model}")
 
             # 切换到对应的SoVITS模型
-            requests.get(f"{API_BASE_URL['base']}set_sovits_weights?weights_path={sovits_model}")
+            requests.get(f"{self.API_BASE_URL['base']}set_sovits_weights?weights_path={sovits_model}")
 
             self.last_role_name = role_name  # 更新上一个角色名
         else:
@@ -96,9 +104,9 @@ class TTS(object):
                 voice_cmd = row['voice_cmd']  # 获取语音指令
                 
                 # 获取对应的 ref_audio_path 和 prompt_text
-                audio_params = voice_cmd_mapping.get(voice_cmd, {})
-                ref_audio_path = audio_params.get("ref_audio_path", f"{default_prompt_audio}")  # 默认值
-                prompt_text = audio_params.get("prompt_text", f"{default_prompt_text}")  # 默认值
+                audio_params = self.voice_cmd_mapping.get(voice_cmd, {})
+                ref_audio_path = audio_params.get("ref_audio_path", f"{self.default_prompt_audio}")  # 默认值
+                prompt_text = audio_params.get("prompt_text", f"{self.default_prompt_text}")  # 默认值
 
                 # 使用DeepL翻译中文文本为日文
                 if language == 'JA':
@@ -108,7 +116,7 @@ class TTS(object):
                 
                 # 发送合成请求
                 response = requests.post(
-                    f"{API_BASE_URL['base']}tts",
+                    f"{self.API_BASE_URL['base']}tts",
                     json={
                         "text": text,
                         "text_lang": "auto",
