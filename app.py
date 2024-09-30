@@ -58,8 +58,12 @@ class Application_ui(Frame):
         self.ConvertButton.place(relx=0.788, rely=0.7, relwidth=0.146, relheight=0.236)
 
         self.style.configure('SynthesizeButton.TButton', font=('宋体', 9))
-        self.SynthesizeButton = Button(self.top, text='合成音频', command=self.synthesize_audio, style='SynthesizeButton.TButton')
-        self.SynthesizeButton.place(relx=0.5, rely=0.7, relwidth=0.146, relheight=0.073)
+        self.SynthesizeButton = Button(self.top, text='按源语言合成音频', command=self.synthesize_audio, style='SynthesizeButton.TButton')
+        self.SynthesizeButton.place(relx=0.35, rely=0.7, relwidth=0.180, relheight=0.073)
+
+        self.style.configure('SynthesizeJapaneseButton.TButton', font=('宋体', 9))
+        self.SynthesizeJapaneseButton = Button(self.top, text='按中译日合成音频', command=self.synthesize_japanese_audio, style='SynthesizeJapaneseButton.TButton')
+        self.SynthesizeJapaneseButton.place(relx=0.55, rely=0.7, relwidth=0.180, relheight=0.073)
 
         self.style.configure('OutputLabel.TLabel', anchor='w', font=('宋体', 9))
         self.OutputLabel = Label(self.top, text='保存目录：', style='OutputLabel.TLabel')
@@ -164,6 +168,24 @@ class Application(Application_ui):
                 tts = TTS(conveter)
                 parsed_sheets_tts = tts.filter_parsed_sheets_tts()
                 tts.synthesize_voice(parsed_sheets_tts)
+            except VoiceException as err:
+                success_flag = False
+                showerror("合成错误", err.msg)    
+            if success_flag:
+                showinfo("合成成功", "合成完成")
+                self.saveAddr.delete('0', 'end')
+                self.Text.delete('0.0', 'end')
+                
+    def synthesize_japanese_audio(self, event=None):
+        success_flag = True
+        for path in self.getTlist():
+            try:
+                parser = Parser(path)
+                conveter = Converter(parser)
+                convert_results = conveter.generate_rpy_elements()
+                tts = TTS(conveter)
+                parsed_sheets_tts = tts.filter_parsed_sheets_tts()
+                tts.synthesize_voice(parsed_sheets_tts,'JA')
             except VoiceException as err:
                 success_flag = False
                 showerror("合成错误", err.msg)    

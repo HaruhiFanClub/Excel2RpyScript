@@ -72,8 +72,23 @@ class TTS(object):
         else:
             print(f"No model found for role: {role_name}")
             
+    def translate_text(self, text, target_lang):
+        # DeepL API翻译方法
+        api_url = "https://api-free.deepl.com/v2/translate"
+        params = {
+            "auth_key": "a3db6896-b41d-460a-bdbd-402d53c9eadc:fx",  # 替换为你的API密钥
+            "text": text,
+            "target_lang": target_lang,
+        }
+        response = requests.post(api_url, data=params)
+        if response.status_code == 200:
+            return response.json()['translations'][0]['text']
+        else:
+            print(f"Translation error: {response.json()}")
+            return text  # 返回原文本以防止错误中断
+    
         
-    def synthesize_voice(self,voice_tts_sheets):
+    def synthesize_voice(self,voice_tts_sheets,language):
         for sheet_index, sheet in enumerate(voice_tts_sheets):
             for row_index, row in enumerate(sheet['rows']):
                 role_name = row['role_name']  # 获取角色名
@@ -84,6 +99,10 @@ class TTS(object):
                 audio_params = voice_cmd_mapping.get(voice_cmd, {})
                 ref_audio_path = audio_params.get("ref_audio_path", f"{default_prompt_audio}")  # 默认值
                 prompt_text = audio_params.get("prompt_text", f"{default_prompt_text}")  # 默认值
+
+                # 使用DeepL翻译中文文本为日文
+                if language == 'JA':
+                    text = self.translate_text(text, target_lang='JA')
 
                 self.switch_models(role_name)
                 
