@@ -18,6 +18,7 @@ class TTS(object):
         self.voice_cmd_mapping = tts_config.voice_cmd_mapping
         self.default_prompt_text = tts_config.default_prompt_text
         self.default_prompt_audio = tts_config.default_prompt_audio
+        self.deepL_api_key = tts_config.deepL_api_key
         
         
         
@@ -84,7 +85,7 @@ class TTS(object):
         # DeepL API翻译方法
         api_url = "https://api-free.deepl.com/v2/translate"
         params = {
-            "auth_key": "a3db6896-b41d-460a-bdbd-402d53c9eadc:fx",  # 替换为你的API密钥
+            "auth_key": self.deepL_api_key,  # 替换为你的API密钥
             "text": text,
             "target_lang": target_lang,
         }

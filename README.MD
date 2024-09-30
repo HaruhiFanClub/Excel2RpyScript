@@ -22,11 +22,8 @@
 |--app.py 程序入口
 ```
 ## 语音合成使用说明
-目前仅支持通过API方式调用`GPT-SoVITS-V2`
+目前仅支持通过API方式调用[GPT-SoVITS-V2](https://github.com/RVC-Boss/GPT-SoVITS)，可在本地部署此项目或使用他人的在线服务。
 
-语音合成的相关配置项位于`./const/tts_setting.py`
-
-请参考`./test/`中的示例表格进行编辑。
 
 ## 打包程序
 - 工具: pyinstaller  

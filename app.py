@@ -40,6 +40,7 @@ class Application_ui(Frame):
         self.voice_cmd_mapping = tts_config.voice_cmd_mapping
         self.default_prompt_text = tts_config.default_prompt_text
         self.default_prompt_audio = tts_config.default_prompt_audio
+        self.deepL_api_key = tts_config.deepL_api_key
         self.save_config_gui = tts_config.save_config_gui
         self.delete_role_gui = tts_config.delete_role
         self.delete_voice_cmd_gui = tts_config.delete_voice_cmd
@@ -148,12 +149,19 @@ class Application_ui(Frame):
         self.api_base_entry = Entry(self.config_tab)
         self.api_base_entry.place(relx=0.32, rely=0.75, relwidth=0.4, relheight=0.05)
         self.api_base_entry.insert(0, self.API_BASE_URL['base'])
+        
+        self.deepL_api_label = Label(self.config_tab, text='DeepL API_KEY:', style='TLabel')
+        self.deepL_api_label.place(relx=0.20, rely=0.80, relwidth=0.2, relheight=0.05)
+        self.deepL_api_entry = Entry(self.config_tab)
+        self.deepL_api_entry.place(relx=0.32, rely=0.80, relwidth=0.4, relheight=0.05)
+        self.deepL_api_entry.insert(0, self.deepL_api_key)
 
     def save_config_try(self):
         
         self.default_prompt_audio = self.default_audio_entry.get()
         self.default_prompt_text = self.default_text_entry.get()
         self.api_base_url = {'base': self.api_base_entry.get()}
+        self.deepL_api_key = self.deepL_api_entry.get()
         
         # 更新角色模型映射
         if self.last_selected_role:
@@ -168,7 +176,7 @@ class Application_ui(Frame):
                 'prompt_text':self.prompt_text_entry.get()
             }
 
-        self.save_config_gui(self.default_prompt_text, self.default_prompt_audio, self.api_base_url, self.role_model_mapping, self.voice_cmd_mapping)
+        self.save_config_gui(self.default_prompt_text, self.default_prompt_audio, self.api_base_url, self.role_model_mapping, self.voice_cmd_mapping, self.deepL_api_key)
 
     def add_role(self):
         new_role = simpledialog.askstring("新增角色", "请输入角色名:")
