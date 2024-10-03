@@ -367,7 +367,7 @@ class Application(Application_ui):
                 convert_results = conveter.generate_rpy_elements()
                 tts = TTS(conveter)
                 parsed_sheets_tts = tts.filter_parsed_sheets_tts()
-                tts.synthesize_voice(parsed_sheets_tts,'ZH')
+                tts.synthesize_voice(parsed_sheets_tts,'auto')
             except VoiceException as err:
                 success_flag = False
                 showerror("合成错误", err.msg)    
