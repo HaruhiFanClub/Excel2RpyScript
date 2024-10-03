@@ -30,7 +30,7 @@ class TTS(object):
 
         for parsed_sheet in parsed_sheets:
             filtered_rows = []
-            for row in parsed_sheet.row_values:
+            for original_row_index, row in enumerate(parsed_sheet.row_values):
                 # 检查当前行的 role_name
                 role_name = row[ElementColNumMapping.get('role_name')]
                 if role_name.strip():
@@ -43,7 +43,8 @@ class TTS(object):
                     filtered_row = {
                         'role_name': role_name,
                         'text': row[ElementColNumMapping.get('text')],
-                        'voice_cmd': row[ElementColNumMapping.get('voice_cmd')]
+                        'voice_cmd': row[ElementColNumMapping.get('voice_cmd')],
+                        'original_row_index': original_row_index
                     }
                     filtered_rows.append(filtered_row)
                     
@@ -103,6 +104,7 @@ class TTS(object):
                 role_name = row['role_name']  # 获取角色名
                 text = row['text']  # 获取文本
                 voice_cmd = row['voice_cmd']  # 获取语音指令
+                original_row_index = row['original_row_index']
                 
                 # 获取对应的 ref_audio_path 和 prompt_text
                 audio_params = self.voice_cmd_mapping.get(voice_cmd, {})
@@ -135,7 +137,7 @@ class TTS(object):
                 if response.status_code == 200:
                     # 处理成功的音频流
                     audio_stream = response.content
-                    audio_file_path = os.path.join(audio_folder, f"{role_name}_sheet{sheet_index+1}_row{row_index+8}_synthesized.wav")
+                    audio_file_path = os.path.join(audio_folder, f"{role_name}_sheet{sheet_index+1}_row{original_row_index+8}_synthesized.wav")
                     with open(audio_file_path, "wb") as f:
                         f.write(audio_stream)
                 else:
