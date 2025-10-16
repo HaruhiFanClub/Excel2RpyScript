@@ -247,7 +247,7 @@ class Application_ui(Frame):
 
         self.style.configure('InputButton.TButton', font=('宋体', 12))
         self.InputButton = Button(self.main_tab, text='浏览', command=self.InputButton_Cmd, style='InputButton.TButton')
-        self.InputButton.place(relx=0.184, rely=0.7, relwidth=0.133, relheight=0.073)
+        self.InputButton.place(relx=0.184, rely=0.7, relwidth=0.060, relheight=0.073)
 
         self.Haruhi_gif = PhotoImage(data=base64.b64decode(haruhi_gif_data))
         self.style.configure('ConvertButton.TButton', font=('宋体', 12))
@@ -255,13 +255,45 @@ class Application_ui(Frame):
                                     style='ConvertButton.TButton')
         self.ConvertButton.place(relx=0.788, rely=0.7, relwidth=0.146, relheight=0.236)
 
+        # —— 新增：语言选择下拉 —— #
+        # 下拉选项（显示中文，内部取 code）
+        self.lang_options_display = [
+            "中文", "粤语", "英文", "日文", "韩文",
+            "中英混合", "粤英混合", "日英混合", "韩英混合",
+            "多语种混合", "多语种混合(粤语)"
+        ]
+
+        # 文本语言（text_lang）
+        self.TextLangLabel = Label(self.main_tab, text='用于合成的文本语言：', style='TLabel')
+        self.TextLangLabel.place(relx=0.066, rely=0.64, relwidth=0.16, relheight=0.05)
+
+        self.TextLangCombo = Combobox(
+            self.main_tab, values=self.lang_options_display, state='readonly', font=('宋体', 12)
+        )
+        self.TextLangCombo.place(relx=0.22, rely=0.64, relwidth=0.18, relheight=0.053)
+        self.TextLangCombo.set('多语种混合')  # 默认
+
+        # 参考音频语言（prompt_lang）
+        self.PromptLangLabel = Label(self.main_tab, text='参考音频语言（不懂可不动）：', style='TLabel')
+        self.PromptLangLabel.place(relx=0.42, rely=0.64, relwidth=0.20, relheight=0.05)
+
+        self.PromptLangCombo = Combobox(
+            self.main_tab, values=self.lang_options_display, state='readonly', font=('宋体', 12)
+        )
+        self.PromptLangCombo.place(relx=0.62, rely=0.64, relwidth=0.18, relheight=0.053)
+        self.PromptLangCombo.set('多语种混合')  # 默认
+
         self.style.configure('SynthesizeButton.TButton', font=('宋体', 12))
         self.SynthesizeButton = Button(self.main_tab, text='按源语言合成音频', command=self.synthesize_audio, style='SynthesizeButton.TButton')
-        self.SynthesizeButton.place(relx=0.35, rely=0.7, relwidth=0.180, relheight=0.073)
+        self.SynthesizeButton.place(relx=0.25, rely=0.7, relwidth=0.160, relheight=0.073)
 
         self.style.configure('SynthesizeJapaneseButton.TButton', font=('宋体', 12))
         self.SynthesizeJapaneseButton = Button(self.main_tab, text='按中译日合成音频', command=self.synthesize_japanese_audio, style='SynthesizeJapaneseButton.TButton')
-        self.SynthesizeJapaneseButton.place(relx=0.55, rely=0.7, relwidth=0.180, relheight=0.073)
+        self.SynthesizeJapaneseButton.place(relx=0.60, rely=0.7, relwidth=0.160, relheight=0.073)
+        
+        self.style.configure('SynthesizeVoiceTextButton.TButton', font=('宋体', 12))
+        self.SynthesizeVoiceTextButton = Button(self.main_tab, text='按选填语音文本合成音频', command=self.synthesize_audio_use_voice_text, style='SynthesizeVoiceTextButton.TButton')
+        self.SynthesizeVoiceTextButton.place(relx=0.415, rely=0.7, relwidth=0.180, relheight=0.073)
 
         self.style.configure('OutputLabel.TLabel', anchor='w', font=('宋体', 12))
         self.OutputLabel = Label(self.main_tab, text='保存目录：', style='OutputLabel.TLabel')
@@ -278,7 +310,25 @@ class Application_ui(Frame):
         filemenu.add_command(label='检查更新', command=self.check_for_update)
 
         self.top.config(menu=menubar)
-        
+    
+    def get_lang_codes(self):
+        # 与 handler/tts.py 中的 LANG_OPTIONS 一致
+        LANG_OPTIONS = {
+            "中文": "all_zh",
+            "粤语": "all_yue",
+            "英文": "en",
+            "日文": "all_ja",
+            "韩文": "all_ko",
+            "中英混合": "zh",
+            "粤英混合": "yue",
+            "日英混合": "ja",
+            "韩英混合": "ko",
+            "多语种混合": "auto",
+            "多语种混合(粤语)": "auto_yue",
+        }
+        text_lang_disp = self.TextLangCombo.get() or "多语种混合"
+        prompt_lang_disp = self.PromptLangCombo.get() or "多语种混合"
+        return LANG_OPTIONS[text_lang_disp], LANG_OPTIONS[prompt_lang_disp]
         
 
 class Application(Application_ui):
@@ -360,6 +410,7 @@ class Application(Application_ui):
 
     def synthesize_audio(self, event=None):
         success_flag = True
+        text_lang_code, prompt_lang_code = self.get_lang_codes()
         for path in self.getTlist():
             try:
                 parser = Parser(path)
@@ -367,7 +418,26 @@ class Application(Application_ui):
                 convert_results = conveter.generate_rpy_elements()
                 tts = TTS(conveter)
                 parsed_sheets_tts = tts.filter_parsed_sheets_tts()
-                tts.synthesize_voice(parsed_sheets_tts,'auto')
+                tts.synthesize_voice(parsed_sheets_tts,'auto', text_lang_code, prompt_lang_code ,False)
+            except VoiceException as err:
+                success_flag = False
+                showerror("合成错误", err.msg)    
+            if success_flag:
+                showinfo("合成成功", "合成完成")
+                self.saveAddr.delete('0', 'end')
+                self.Text.delete('0.0', 'end')
+    
+    def synthesize_audio_use_voice_text(self, event=None):
+        success_flag = True
+        text_lang_code, prompt_lang_code = self.get_lang_codes()
+        for path in self.getTlist():
+            try:
+                parser = Parser(path)
+                conveter = Converter(parser)
+                convert_results = conveter.generate_rpy_elements()
+                tts = TTS(conveter)
+                parsed_sheets_tts = tts.filter_parsed_sheets_tts()
+                tts.synthesize_voice(parsed_sheets_tts,'auto', text_lang_code, prompt_lang_code ,True)
             except VoiceException as err:
                 success_flag = False
                 showerror("合成错误", err.msg)    
@@ -378,6 +448,7 @@ class Application(Application_ui):
                 
     def synthesize_japanese_audio(self, event=None):
         success_flag = True
+        text_lang_code, prompt_lang_code = self.get_lang_codes()
         for path in self.getTlist():
             try:
                 parser = Parser(path)
@@ -385,7 +456,7 @@ class Application(Application_ui):
                 convert_results = conveter.generate_rpy_elements()
                 tts = TTS(conveter)
                 parsed_sheets_tts = tts.filter_parsed_sheets_tts()
-                tts.synthesize_voice(parsed_sheets_tts,'JA')
+                tts.synthesize_voice(parsed_sheets_tts,'JA', text_lang_code, prompt_lang_code ,False)
             except VoiceException as err:
                 success_flag = False
                 showerror("合成错误", err.msg)    

@@ -7,6 +7,20 @@ from const.tts_setting import TTSConfig
 
 import requests, os
 
+LANG_OPTIONS = {
+    "中文": "all_zh",
+    "粤语": "all_yue",
+    "英文": "en",
+    "日文": "all_ja",
+    "韩文": "all_ko",
+    "中英混合": "zh",
+    "粤英混合": "yue",
+    "日英混合": "ja",
+    "韩英混合": "ko",
+    "多语种混合": "auto",
+    "多语种混合(粤语)": "auto_yue",
+}
+
 class TTS(object):
     def __init__(self,conveter):
         self.conveter = conveter
@@ -39,10 +53,11 @@ class TTS(object):
                     role_name = current_role_name  # 如果当前 role_name 为空，使用最近的有效值
                 
                 if row[ElementColNumMapping.get('voice')].strip().lower() == 'tts':
-                    # 只保留 role_name, text, 和 voice_cmd 列
+                    # 只保留 role_name, text,voice_text , 和 voice_cmd 列
                     filtered_row = {
                         'role_name': role_name,
                         'text': row[ElementColNumMapping.get('text')],
+                        'voice_text': row[ElementColNumMapping.get('voice_text')],
                         'voice_cmd': row[ElementColNumMapping.get('voice_cmd')],
                         'original_row_index': original_row_index
                     }
@@ -63,8 +78,8 @@ class TTS(object):
         
         # 切换到对应的GPT和SoVITS模型
         
-        if role_name == self.last_role_name:
-            return  # 如果角色名相同，则无需切换
+       # if role_name == self.last_role_name:
+       #     return  # 如果角色名相同，则无需切换
         
         models = self.role_model_mapping.get(role_name)
         
@@ -98,11 +113,14 @@ class TTS(object):
             return text  # 返回原文本以防止错误中断
     
         
-    def synthesize_voice(self,voice_tts_sheets,language):
+    def synthesize_voice(self,voice_tts_sheets,language, text_lang_code, prompt_lang_code ,use_voice_text):
         for sheet_index, sheet in enumerate(voice_tts_sheets):
             for row_index, row in enumerate(sheet['rows']):
                 role_name = row['role_name']  # 获取角色名
-                text = row['text']  # 获取文本
+                if use_voice_text == True:
+                    text = row['voice_text']  # 获取文本
+                else:
+                    text = row['text']
                 voice_cmd = row['voice_cmd']  # 获取语音指令
                 original_row_index = row['original_row_index']
                 
@@ -122,11 +140,11 @@ class TTS(object):
                     f"{self.API_BASE_URL['base']}tts",
                     json={
                         "text": text,
-                        "text_lang": "auto",
+                        "text_lang": text_lang_code,
                         "ref_audio_path": ref_audio_path,  # 参考音频路径
                         "prompt_text": prompt_text,  # 参考音频文本
-                        "prompt_lang": "auto",
-                        "text_split_method": "cut0",  # 可选的文本分割方法
+                        "prompt_lang": prompt_lang_code,
+                        "text_split_method": "cut1",  # 可选的文本分割方法
                         "batch_size": 1,  # 每次请求一行
                     }
                 )

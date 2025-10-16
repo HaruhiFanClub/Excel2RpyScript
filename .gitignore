@@ -4,3 +4,7 @@
 /build
 *.spec
 /.vscode
+/audio
+/dist
+/test
+/predef_ref

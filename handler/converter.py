@@ -61,7 +61,7 @@ class Converter(object):
     @classmethod
     def generate_character(cls, img_str):
         last_word = img_str.split(" ")[-1]
-        position = PositionMapping.get(last_word)
+        position = PositionMapping.get(last_word, None) or last_word
         if position:
             return Image(img_str.replace(last_word, "").strip(), "show", position)
         else:
@@ -169,18 +169,23 @@ class RowConverter(object):
         return Image(background, "scene")
 
     def _converter_character(self):
-        # 立绘
-        character_str = str(self.row[ElementColNumMapping.get('character')]).strip()
+        character_str = str(self.row[ElementColNumMapping['character']]).strip()
+        # --- 1. 统一地回收旧立绘 ---
+        hide_images = [Image(char.name, 'hide') for char in self.converter.characters]
+        # --- 2. 若本行没有立绘，只需回收后结束 ---
         if not character_str:
-            return []
-        characters = []
-        # 新立绘出现时回收旧立绘
-        for character in self.converter.characters:
-            characters.append(Image(character.name, 'hide'))
-        new_characters = [Converter.generate_character(ch) for ch in character_str.split(";")]
+            # 清空缓存，避免残留
+            self.converter.characters = []
+            return hide_images            # 只返回“hide”指令
+        # --- 3. 解析并生成新立绘 ---
+        new_characters = [
+            Converter.generate_character(ch)
+            for ch in character_str.split(';') if ch.strip()
+        ]
+        # 更新缓存为当前行的新立绘
         self.converter.characters = new_characters
-        characters.extend(new_characters)
-        return characters
+        # 返回：先隐藏旧立绘，再展示新立绘
+        return hide_images + new_characters
 
     def _converter_remark(self):
         pass
