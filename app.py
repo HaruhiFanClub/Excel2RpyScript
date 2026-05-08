@@ -15,9 +15,10 @@ import requests
 
 from const.tts_setting import TTSConfig
 from const import CURRENT_VERSION
-from corelib.exception import ConvertException, SaveFileException, VoiceException
+from corelib.exception import ConvertException, ParseFileException, SaveFileException, VoiceException
 from handler.converter import Converter
 from handler.parser import Parser
+from handler.proofreader import XlsProofreader
 from handler.writer import RpyFileWriter
 from tools.image_data import *
 from handler.tts import TTS
@@ -253,7 +254,12 @@ class Application_ui(Frame):
         self.style.configure('ConvertButton.TButton', font=('宋体', 12))
         self.ConvertButton = Button(self.main_tab, image=self.Haruhi_gif, command=self.ConvertButton_Cmd,
                                     style='ConvertButton.TButton')
-        self.ConvertButton.place(relx=0.788, rely=0.7, relwidth=0.146, relheight=0.236)
+        self.ConvertButton.place(relx=0.788, rely=0.7, relwidth=0.146, relheight=0.118)
+
+        self.style.configure('ProofreadButton.TButton', font=('宋体', 12))
+        self.ProofreadButton = Button(self.main_tab, text='校对', command=self.ProofreadButton_Cmd,
+                                      style='ProofreadButton.TButton')
+        self.ProofreadButton.place(relx=0.788, rely=0.85, relwidth=0.146, relheight=0.118)
 
         # —— 新增：语言选择下拉 —— #
         # 下拉选项（显示中文，内部取 code）
@@ -396,7 +402,7 @@ class Application(Application_ui):
                 parser = Parser(path)
                 conveter = Converter(parser)
                 convert_results = conveter.generate_rpy_elements()
-                
+
                 print(conveter.side_characters)
                 for res in convert_results:
                     self.convert(self.saveAddr.get(), res, conveter.role_name_mapping, conveter.side_characters)
@@ -407,6 +413,35 @@ class Application(Application_ui):
             showinfo("转换成功", "转换完成")
             self.saveAddr.delete('0', 'end')
             self.Text.delete('0.0', 'end')
+
+    def ProofreadButton_Cmd(self, event=None):
+        save_addr = self.saveAddr.get()
+        if not save_addr:
+            showerror("校对错误", "请先填写保存目录")
+            return
+
+        success_flag = True
+        total_errors = 0
+        total_warnings = 0
+        for path in self.getTlist():
+            try:
+                parser = Parser(path)
+                errors, warnings = XlsProofreader(parser, save_addr).proofread()
+                total_errors += errors
+                total_warnings += warnings
+            except ParseFileException as err:
+                success_flag = False
+                showerror("校对错误", err.msg)
+            except OSError as err:
+                success_flag = False
+                showerror("校对错误", "无法写入日志：{}".format(err))
+        if success_flag:
+            showinfo(
+                "校对结束",
+                "校对完成：错误 {}，警告 {}\n详情见 {}".format(
+                    total_errors, total_warnings, save_addr.rstrip('/\\') + '/log.txt'
+                ),
+            )
 
     def synthesize_audio(self, event=None):
         success_flag = True
