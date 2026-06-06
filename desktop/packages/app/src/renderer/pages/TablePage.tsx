@@ -11,9 +11,10 @@ import {
 } from 'ag-grid-community'
 import { FileSpreadsheet, TableProperties, Save, RotateCcw, X } from 'lucide-react'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
+import { parseSprites, serializeSprites } from '@e2r/core/sprites'
 import type { CellEdit } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
-import { SpriteCell, BgCell, AudioCell, type GridContext } from '../components/cellRenderers'
+import { SpriteSlotCell, BgCell, AudioCell, type GridContext } from '../components/cellRenderers'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -40,11 +41,16 @@ const gridTheme = themeQuartz.withParams({
 type Row = Record<string, string | number>
 const LARGE_TEXT = new Set(['text', 'voice_text', 'remark'])
 const RENDERERS: Record<string, ColDef<Row>['cellRenderer']> = {
-  character: SpriteCell,
   background: BgCell,
   music: AudioCell,
   sound: AudioCell,
 }
+// 立绘列拆成 左/中/右 三个虚拟列（底层仍写回单一 character 列）
+const SPRITE_SUB: { field: string; header: string }[] = [
+  { field: 'sprite_left', header: '立绘·左' },
+  { field: 'sprite_mid', header: '立绘·中' },
+  { field: 'sprite_right', header: '立绘·右' },
+]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
 
 export default function TablePage() {
@@ -106,11 +112,24 @@ export default function TablePage() {
     [assets],
   )
 
-  const columnDefs = useMemo<ColDef<Row>[]>(
-    () => [
+  const columnDefs = useMemo<ColDef<Row>[]>(() => {
+    const defs: ColDef<Row>[] = [
       { headerName: '#', field: '__row', width: 60, pinned: 'left', sortable: false, editable: false, cellClass: 'text-app-muted' },
-      ...TABLE_COLUMNS.map(
-        (c): ColDef<Row> => ({
+    ]
+    for (const c of TABLE_COLUMNS) {
+      if (c.key === 'character') {
+        for (const s of SPRITE_SUB) {
+          defs.push({
+            headerName: s.header,
+            field: s.field,
+            width: 128,
+            editable: true,
+            tooltipField: s.field,
+            cellRenderer: SpriteSlotCell,
+          })
+        }
+      } else {
+        defs.push({
           headerName: c.header,
           field: c.key,
           width: c.width,
@@ -118,15 +137,26 @@ export default function TablePage() {
           tooltipField: c.key,
           ...(RENDERERS[c.key] ? { cellRenderer: RENDERERS[c.key] } : {}),
           ...(LARGE_TEXT.has(c.key) ? { cellEditor: 'agLargeTextCellEditor', cellEditorPopup: true } : {}),
-        }),
-      ),
-    ],
-    [],
-  )
+        })
+      }
+    }
+    return defs
+  }, [])
 
   const defaultColDef = useMemo<ColDef<Row>>(() => ({ resizable: true, sortable: true }), [])
   const rowData = useMemo<Row[]>(
-    () => sheet?.rows.map((r) => ({ __row: r.excelRow, ...r.cells })) ?? [],
+    () =>
+      sheet?.rows.map((r) => {
+        const s = parseSprites(r.cells['character'] ?? '')
+        return {
+          __row: r.excelRow,
+          ...r.cells,
+          sprite_left: s.left,
+          sprite_mid: s.mid,
+          sprite_right: s.right,
+          sprite_other: s.other,
+        }
+      }) ?? [],
     [sheet],
   )
 
@@ -139,12 +169,28 @@ export default function TablePage() {
       const col = e.colDef.field
       if (!col || col === '__row' || !sheet) return
       const excelRow = Number(e.data['__row'])
-      edits.current.set(editKey(sheet.name, excelRow, col), {
-        sheet: sheet.name,
-        excelRow,
-        col: col as CellEdit['col'],
-        value: e.newValue == null ? '' : String(e.newValue),
-      })
+      if (col.startsWith('sprite_')) {
+        // 三列任一变化 → 重建单一 character 列（左→中→右→other 顺序）
+        const col19 = serializeSprites({
+          left: String(e.data['sprite_left'] ?? ''),
+          mid: String(e.data['sprite_mid'] ?? ''),
+          right: String(e.data['sprite_right'] ?? ''),
+          other: String(e.data['sprite_other'] ?? ''),
+        })
+        edits.current.set(editKey(sheet.name, excelRow, 'character'), {
+          sheet: sheet.name,
+          excelRow,
+          col: 'character',
+          value: col19,
+        })
+      } else {
+        edits.current.set(editKey(sheet.name, excelRow, col), {
+          sheet: sheet.name,
+          excelRow,
+          col: col as CellEdit['col'],
+          value: e.newValue == null ? '' : String(e.newValue),
+        })
+      }
       setDirty(edits.current.size)
     },
     [sheet],

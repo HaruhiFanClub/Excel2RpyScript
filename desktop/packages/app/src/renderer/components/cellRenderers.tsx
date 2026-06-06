@@ -55,6 +55,34 @@ export function SpriteCell(p: CustomCellRendererProps) {
   )
 }
 
+// 立绘单列（左/中/右）：值即「角色 编号」，直接解析为图像名 → 缩略图 + 文本
+export function SpriteSlotCell(p: CustomCellRendererProps) {
+  const ctx = ctxOf(p)
+  const raw = String(p.value ?? '').trim()
+  if (!raw) return null
+  const names = raw.split(';').map((s) => s.trim()).filter(Boolean)
+  return (
+    <div className="flex h-full items-center gap-2 overflow-hidden">
+      {names.map((name, i) => {
+        const rel = ctx.assets ? resolveImage(ctx.assets, name) : null
+        return (
+          <span key={i} className="flex items-center gap-1 overflow-hidden">
+            {rel && (
+              <img
+                src={assetUrl(rel)}
+                title={name}
+                onClick={() => ctx.onImage(assetUrl(rel), name)}
+                className="h-7 w-auto max-w-[40px] cursor-pointer rounded object-contain ring-1 ring-app-border"
+              />
+            )}
+            <span className="truncate text-[12px]">{name}</span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 // 背景：缩略图 / 纯色色块 / 名称
 export function BgCell(p: CustomCellRendererProps) {
   const ctx = ctxOf(p)
