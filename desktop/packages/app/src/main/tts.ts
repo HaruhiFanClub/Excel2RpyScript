@@ -80,13 +80,24 @@ export interface SynthOptions {
   textLang: string
   promptLang: string
   baseUrl?: string // 覆盖端点（用内置引擎时）
+  skipSwitch?: boolean // 与上一句同角色时跳过切权重（批量提速）
+}
+
+// 角色名 → 模型条目（支持「一个模型绑定多个第一列角色名」：aliases）
+export function modelForRole(cfg: TtsConfig, roleName: string) {
+  const direct = cfg.roleModelMapping[roleName]
+  if (direct) return direct
+  for (const m of Object.values(cfg.roleModelMapping)) {
+    if (m.aliases?.includes(roleName)) return m
+  }
+  return undefined
 }
 
 // 合成单个任务（切权重 → POST /tts → 落盘）
 export async function synthOne(job: TtsJob, opts: SynthOptions): Promise<void> {
   const base = opts.baseUrl ?? opts.cfg.apiBaseUrl
-  const model = opts.cfg.roleModelMapping[job.roleName]
-  if (model) {
+  const model = modelForRole(opts.cfg, job.roleName)
+  if (model && !opts.skipSwitch) {
     if (model.gpt) await fetch(`${base}set_gpt_weights?weights_path=${encodeURIComponent(model.gpt)}`)
     if (model.sovits)
       await fetch(`${base}set_sovits_weights?weights_path=${encodeURIComponent(model.sovits)}`)

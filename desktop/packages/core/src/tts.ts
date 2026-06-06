@@ -57,6 +57,7 @@ export function planTtsJobs(sheets: ParsedSheet[], opts: PlanTtsOptions): TtsJob
 export interface RoleModel {
   gpt: string
   sovits: string
+  aliases?: string[] // 该模型额外绑定的第一列角色名（一个模型绑定多个角色名）
 }
 export interface VoiceCmd {
   refAudioPath: string
@@ -75,14 +76,21 @@ export interface TtsConfig {
 // 解析旧 config.json（snake_case / API_BASE_URL.base）为 TtsConfig
 export function parseLegacyTtsConfig(json: unknown): TtsConfig {
   const j = (json ?? {}) as Record<string, unknown>
-  const roleSrc = (j['role_model_mapping'] ?? {}) as Record<string, { gpt?: string; sovits?: string }>
+  const roleSrc = (j['role_model_mapping'] ?? {}) as Record<
+    string,
+    { gpt?: string; sovits?: string; aliases?: string[] }
+  >
   const cmdSrc = (j['voice_cmd_mapping'] ?? {}) as Record<
     string,
     { ref_audio_path?: string; prompt_text?: string; tone?: string }
   >
   const roleModelMapping: Record<string, RoleModel> = {}
   for (const [k, v] of Object.entries(roleSrc))
-    roleModelMapping[k] = { gpt: v.gpt ?? '', sovits: v.sovits ?? '' }
+    roleModelMapping[k] = {
+      gpt: v.gpt ?? '',
+      sovits: v.sovits ?? '',
+      ...(Array.isArray(v.aliases) ? { aliases: v.aliases } : {}),
+    }
   const voiceCmdMapping: Record<string, VoiceCmd> = {}
   for (const [k, v] of Object.entries(cmdSrc))
     voiceCmdMapping[k] = {
@@ -98,6 +106,24 @@ export function parseLegacyTtsConfig(json: unknown): TtsConfig {
     defaultPromptAudio: (j['default_prompt_audio'] as string) ?? '',
     defaultPromptText: (j['default_prompt_text'] as string) ?? '',
     deepLApiKey: (j['deepL_api_key'] as string) ?? '',
+  }
+}
+
+// 序列化为旧 config.json 结构（与旧工具/预设兼容）
+export function serializeTtsConfig(cfg: TtsConfig): unknown {
+  const role: Record<string, { gpt: string; sovits: string; aliases?: string[] }> = {}
+  for (const [k, v] of Object.entries(cfg.roleModelMapping))
+    role[k] = { gpt: v.gpt, sovits: v.sovits, ...(v.aliases?.length ? { aliases: v.aliases } : {}) }
+  const cmd: Record<string, { ref_audio_path: string; prompt_text: string; tone?: string }> = {}
+  for (const [k, v] of Object.entries(cfg.voiceCmdMapping))
+    cmd[k] = { ref_audio_path: v.refAudioPath, prompt_text: v.promptText, ...(v.tone ? { tone: v.tone } : {}) }
+  return {
+    role_model_mapping: role,
+    voice_cmd_mapping: cmd,
+    default_prompt_audio: cfg.defaultPromptAudio,
+    default_prompt_text: cfg.defaultPromptText,
+    API_BASE_URL: { base: cfg.apiBaseUrl },
+    deepL_api_key: cfg.deepLApiKey ?? '',
   }
 }
 

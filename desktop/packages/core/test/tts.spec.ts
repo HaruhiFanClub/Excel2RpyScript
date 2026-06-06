@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { planTtsJobs, parseLegacyTtsConfig, ttsJobSignature } from '../src/tts'
+import { planTtsJobs, parseLegacyTtsConfig, ttsJobSignature, serializeTtsConfig } from '../src/tts'
 import { runPipeline, type ParsedSheet } from '../src/index'
 import { EMPTY, textCell, type CellValue } from '../src/parse/cellValue'
 import { ElementColNumMapping, type ColKey } from '../src/settings/converterSetting'
@@ -62,6 +62,19 @@ describe('parseLegacyTtsConfig / 签名', () => {
     expect(cfg.apiBaseUrl).toBe('http://x:9880/')
     expect(cfg.roleModelMapping['阿虚']).toEqual({ gpt: 'g.ckpt', sovits: 's.pth' })
     expect(cfg.voiceCmdMapping['kyon_1']).toMatchObject({ refAudioPath: 'r.wav', promptText: 'p' })
+  })
+
+  it('parse ↔ serialize 往返（含 aliases / tone）', () => {
+    const src = {
+      role_model_mapping: { 阿虚: { gpt: 'g', sovits: 's', aliases: ['kyon', 'Kyon'] } },
+      voice_cmd_mapping: { kyon_1: { ref_audio_path: 'r', prompt_text: 'p', tone: '平静' } },
+      default_prompt_audio: 'd',
+      default_prompt_text: 'dp',
+      API_BASE_URL: { base: 'http://x/' },
+      deepL_api_key: 'k',
+    }
+    const round = serializeTtsConfig(parseLegacyTtsConfig(src))
+    expect(round).toEqual(src)
   })
 
   it('改语音指令 → 签名变化（未重新生成检测）', () => {

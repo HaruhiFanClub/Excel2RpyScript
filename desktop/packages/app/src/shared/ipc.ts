@@ -114,6 +114,7 @@ export interface E2rApi {
   openXlsx(): Promise<string | null>
   selectDir(): Promise<string | null>
   openJson(): Promise<string | null>
+  saveJson(defaultName?: string): Promise<string | null>
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
   validateFormat(xlsxPath: string): Promise<FormatResult>
@@ -123,6 +124,7 @@ export interface E2rApi {
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
   ttsLoadConfig(path: string): Promise<TtsConfigResult>
+  ttsSaveConfig(path: string, config: TtsConfig): Promise<SaveResult>
   ttsHealth(baseUrl: string): Promise<TtsHealth>
   ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
   ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>

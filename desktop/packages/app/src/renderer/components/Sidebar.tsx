@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useThemeStore } from '../stores/useThemeStore'
+import { useUiStore } from '../stores/useUiStore'
 
 export type PageId = 'convert' | 'table' | 'tts' | 'check' | 'project'
 
@@ -66,6 +67,7 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
   const { active, onNavigate } = props
   const theme = useThemeStore((s) => s.theme)
   const toggleTheme = useThemeStore((s) => s.toggleTheme)
+  const openSettings = useUiStore((s) => s.openSettings)
 
   return (
     <aside className="flex h-full w-[228px] shrink-0 flex-col border-r border-app-border bg-white/35 backdrop-blur-md dark:bg-zinc-900/30">
@@ -106,8 +108,12 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
           icon={theme === 'dark' ? <Sun size={15} strokeWidth={1.8} /> : <Moon size={15} strokeWidth={1.8} />}
           label={theme === 'dark' ? '切换浅色' : '切换深色'}
         />
-        <Item onClick={() => {}} icon={<Settings size={15} strokeWidth={1.8} />} label="设置" />
-        <Item onClick={() => {}} icon={<Info size={15} strokeWidth={1.8} />} label="关于" />
+        <Item onClick={openSettings} icon={<Settings size={15} strokeWidth={1.8} />} label="设置" />
+        <Item
+          onClick={() => window.open('https://github.com/HaruhiFanClub/Excel2RpyScript', '_blank')}
+          icon={<Info size={15} strokeWidth={1.8} />}
+          label="关于"
+        />
       </div>
 
       <div className="px-4 pb-3 pt-1 text-[10px] text-app-muted">v0.1.0 · M0</div>

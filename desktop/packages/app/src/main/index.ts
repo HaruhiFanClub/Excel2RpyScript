@@ -15,10 +15,12 @@ import {
   resolveGamePath,
   diffWorkbooks,
   parseLegacyTtsConfig,
+  serializeTtsConfig,
   runPipeline,
   writeRpyFiles,
   type CellEdit,
   type PipelineOptions,
+  type TtsConfig,
 } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
 import type {
@@ -109,6 +111,26 @@ function registerIpc(): void {
     })
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
+
+  ipcMain.handle('dialog:saveJson', async (_e, defaultName?: string): Promise<string | null> => {
+    const r = await dialog.showSaveDialog({
+      defaultPath: defaultName ?? 'config.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    return r.canceled ? null : (r.filePath ?? null)
+  })
+
+  ipcMain.handle(
+    'tts:saveConfig',
+    async (_e, path: string, config: TtsConfig): Promise<SaveResult> => {
+      try {
+        await writeFile(path, JSON.stringify(serializeTtsConfig(config), null, 2) + '\n', 'utf-8')
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: errMsg(e) }
+      }
+    },
+  )
 
   ipcMain.handle('preview', (_e, args: PreviewArgs): Promise<PreviewResult> =>
     previewWorkbook(args),
@@ -229,9 +251,12 @@ function registerIpc(): void {
         const set = new Set(args.only)
         jobs = jobs.filter((j) => set.has(j.outputName))
       }
+      // 按角色排序，连续同角色可跳过切权重（大幅提速）
+      jobs = [...jobs].sort((a, b) => a.roleName.localeCompare(b.roleName))
       const audioDir = audioDirFor(args.xlsxPath)
       let done = 0
       let failed = 0
+      let lastRole: string | null = null
       for (let i = 0; i < jobs.length; i++) {
         const job = jobs[i]!
         e.sender.send('tts:progress', {
@@ -246,8 +271,10 @@ function registerIpc(): void {
             audioDir,
             textLang: args.textLang,
             promptLang: args.promptLang,
+            skipSwitch: job.roleName === lastRole,
             ...(args.baseUrl ? { baseUrl: args.baseUrl } : {}),
           })
+          lastRole = job.roleName
           done++
           e.sender.send('tts:progress', {
             outputName: job.outputName,

@@ -7,6 +7,7 @@ import CheckPage from './pages/CheckPage'
 import TtsPage from './pages/TtsPage'
 import ProjectPage from './pages/ProjectPage'
 import { WorkspaceBar } from './components/WorkspaceBar'
+import { SettingsModal } from './components/SettingsModal'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 
 const PAGES: PageId[] = ['convert', 'table', 'tts', 'check', 'project']
@@ -67,6 +68,8 @@ export function App(): JSX.Element {
           </div>
         </div>
       </div>
+
+      <SettingsModal />
     </main>
   )
 }

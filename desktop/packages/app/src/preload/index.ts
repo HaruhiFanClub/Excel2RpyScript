@@ -16,6 +16,7 @@ import type {
   ProjectResult,
   SaveResult,
   TableResult,
+  TtsConfig,
   TtsConfigResult,
   TtsHealth,
   TtsJobsArgs,
@@ -33,6 +34,7 @@ const api: E2rApi = {
   openXlsx: () => ipcRenderer.invoke('dialog:openXlsx'),
   selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
   openJson: () => ipcRenderer.invoke('dialog:openJson'),
+  saveJson: (defaultName?: string) => ipcRenderer.invoke('dialog:saveJson', defaultName),
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
   validateFormat: (xlsxPath: string): Promise<FormatResult> =>
@@ -46,6 +48,8 @@ const api: E2rApi = {
   linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
   ttsLoadConfig: (path: string): Promise<TtsConfigResult> =>
     ipcRenderer.invoke('tts:loadConfig', path),
+  ttsSaveConfig: (path: string, config: TtsConfig): Promise<SaveResult> =>
+    ipcRenderer.invoke('tts:saveConfig', path, config),
   ttsHealth: (baseUrl: string): Promise<TtsHealth> => ipcRenderer.invoke('tts:health', baseUrl),
   ttsJobs: (args: TtsJobsArgs): Promise<TtsJobsResult> => ipcRenderer.invoke('tts:jobs', args),
   ttsSynthesize: (args: TtsSynthArgs): Promise<TtsSynthSummary> =>
