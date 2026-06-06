@@ -6,6 +6,7 @@ import { PlaceholderView } from './components/PlaceholderView'
 import ConvertPage from './pages/ConvertPage'
 import TablePage from './pages/TablePage'
 import CheckPage from './pages/CheckPage'
+import { WorkspaceBar } from './components/WorkspaceBar'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 
 const PAGES: PageId[] = ['convert', 'table', 'tts', 'check', 'project']
@@ -39,7 +40,8 @@ export function App(): JSX.Element {
         <div className="flex h-full">
           <Sidebar active={page} onNavigate={setPage} />
 
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 flex-1 flex-col pt-8">
+            <WorkspaceBar />
             <AnimatePresence mode="wait">
               <motion.div
                 key={page}
@@ -47,10 +49,10 @@ export function App(): JSX.Element {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="custom-scrollbar h-full overflow-y-auto"
+                className="custom-scrollbar min-h-0 flex-1 overflow-y-auto"
               >
                 <div
-                  className={`mx-auto h-full px-8 pb-7 pt-10 ${
+                  className={`mx-auto h-full px-8 pb-7 pt-6 ${
                     page === 'table' ? 'max-w-none' : 'max-w-5xl'
                   }`}
                 >

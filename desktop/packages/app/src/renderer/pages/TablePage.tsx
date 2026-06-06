@@ -9,19 +9,10 @@ import {
   type GridApi,
   type GridReadyEvent,
 } from 'ag-grid-community'
-import {
-  FileSpreadsheet,
-  TableProperties,
-  Save,
-  RotateCcw,
-  Link2,
-  Link2Off,
-  X,
-} from 'lucide-react'
+import { FileSpreadsheet, TableProperties, Save, RotateCcw, X } from 'lucide-react'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
 import type { CellEdit } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
-import { PathPicker } from '../components/PathPicker'
 import { SpriteCell, BgCell, AudioCell, type GridContext } from '../components/cellRenderers'
 
 ModuleRegistry.registerModules([AllCommunityModule])
@@ -58,10 +49,7 @@ const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${
 
 export default function TablePage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
   const assets = useWorkspaceStore((s) => s.assets)
-  const linkProject = useWorkspaceStore((s) => s.linkProject)
-  const clearProject = useWorkspaceStore((s) => s.clearProject)
 
   const [data, setData] = useState<TableData | null>(null)
   const [active, setActive] = useState(0)
@@ -184,17 +172,6 @@ export default function TablePage() {
     setReloadKey((k) => k + 1)
   }, [])
 
-  const onLink = useCallback(async () => {
-    const dir = await window.e2r.selectDir()
-    if (!dir) return
-    const r = await linkProject(dir)
-    if (!r.ok) setError(r.error ?? '关联失败')
-  }, [linkProject])
-
-  const assetCount = assets
-    ? Object.keys(assets.images).length + Object.keys(assets.audio).length
-    : 0
-
   return (
     <div className="flex h-full flex-col">
       <header className="mb-4 flex items-end justify-between gap-4">
@@ -227,37 +204,6 @@ export default function TablePage() {
           </button>
         </div>
       </header>
-
-      <div className="mb-3 flex items-center gap-2">
-        <div className="w-[420px]">
-          <PathPicker
-            value={workbookPath}
-            onChange={setWorkbookPath}
-            mode="file"
-            placeholder="拖入或选择 .xlsx / .xls 文件…"
-            ariaLabel="工作簿"
-          />
-        </div>
-        {assets ? (
-          <button
-            type="button"
-            onClick={clearProject}
-            className="flex h-[34px] items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 dark:text-emerald-300"
-            title={assets.gamePath}
-          >
-            <Link2 size={14} /> 已关联工程 · {assetCount} 资源
-            <Link2Off size={13} className="ml-1 opacity-70" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onLink}
-            className="flex h-[34px] items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 text-[12px] font-medium text-app-text transition-colors hover:bg-white/70 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
-          >
-            <Link2 size={14} /> 关联 Ren&apos;Py 工程
-          </button>
-        )}
-      </div>
 
       {data && data.sheets.length > 0 && (
         <div className="mb-3 flex items-center gap-1 overflow-x-auto">

@@ -21,7 +21,6 @@ const MODES: { id: ConversionMode; label: string; hint: string }[] = [
 
 export default function ConvertPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
   const outputDir = useWorkspaceStore((s) => s.outputDir)
   const setOutputDir = useWorkspaceStore((s) => s.setOutputDir)
   const mode = useWorkspaceStore((s) => s.mode)
@@ -95,23 +94,13 @@ export default function ConvertPage() {
         </p>
       </header>
 
-      {/* 路径 + 模式 */}
-      <section className="glass-card mb-4 p-4">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-app-muted">工作簿</label>
-            <PathPicker
-              value={workbookPath}
-              onChange={setWorkbookPath}
-              mode="file"
-              placeholder="拖入或选择 .xlsx / .xls 文件…"
-              ariaLabel="工作簿路径"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-app-muted">
-              输出目录
-            </label>
+      {/* 输出目录 + 模式 */}
+      <section className="glass-card mb-4 flex flex-wrap items-center gap-x-5 gap-y-3 p-4">
+        <div className="flex min-w-[280px] flex-1 items-center gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-app-muted">
+            输出目录
+          </span>
+          <div className="min-w-0 flex-1">
             <PathPicker
               value={outputDir}
               onChange={setOutputDir}
@@ -122,7 +111,7 @@ export default function ConvertPage() {
           </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <span className="text-[11px] font-medium uppercase tracking-wide text-app-muted">模式</span>
           <div className="inline-flex rounded-[10px] border border-app-border bg-black/5 p-0.5 dark:bg-white/5">
             {MODES.map((m) => (
@@ -151,7 +140,9 @@ export default function ConvertPage() {
             <span className="flex items-center gap-1.5 text-rose-500">
               <TriangleAlert size={13} /> {error}
             </span>
-          ) : preview ? (
+          ) : !preview ? (
+            <span>尚未生成 · 立绘/背景/音频预览请用「表格」页</span>
+          ) : (
             <>
               <span className="flex items-center gap-1.5">
                 <Layers size={13} /> {preview.sheetNames.length} sheet · {preview.files.length} 文件
@@ -163,8 +154,6 @@ export default function ConvertPage() {
               )}
               {exportedDir && <span className="text-emerald-500">已导出 → {exportedDir}</span>}
             </>
-          ) : (
-            '尚未预览'
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -175,7 +164,7 @@ export default function ConvertPage() {
             className="flex h-9 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3.5 text-[12px] font-medium text-app-text transition-colors hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
           >
             {loading === 'preview' ? <span className="spinner" /> : <Eye size={14} />}
-            预览
+            生成
           </button>
           <button
             type="button"
@@ -229,7 +218,7 @@ export default function ConvertPage() {
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-app-muted">
             <FileSpreadsheet size={36} strokeWidth={1.2} />
-            <p className="text-[13px]">选择工作簿后点击「预览」查看转换结果</p>
+            <p className="text-[13px]">点击「生成」查看转换结果（.rpy）</p>
           </div>
         )}
       </section>

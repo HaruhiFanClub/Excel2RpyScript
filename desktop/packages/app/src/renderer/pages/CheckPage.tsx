@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { CircleAlert, TriangleAlert, Info, ShieldCheck, RefreshCw, FileSpreadsheet } from 'lucide-react'
 import type { CheckIssue, CheckSummary } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
-import { PathPicker } from '../components/PathPicker'
 
 type Severity = CheckIssue['severity']
 type Filter = 'all' | Severity
@@ -30,7 +29,6 @@ const META: Record<Severity, { label: string; Icon: typeof CircleAlert; cls: str
 
 export default function CheckPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
 
   const [issues, setIssues] = useState<CheckIssue[] | null>(null)
   const [summary, setSummary] = useState<CheckSummary | null>(null)
@@ -80,25 +78,14 @@ export default function CheckPage() {
             按填写规范扫描剧本，发现错误 / 警告 / 提示
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-[360px]">
-            <PathPicker
-              value={workbookPath}
-              onChange={setWorkbookPath}
-              mode="file"
-              placeholder="拖入或选择 .xlsx / .xls 文件…"
-              ariaLabel="工作簿"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => workbookPath && run(workbookPath)}
-            disabled={!workbookPath || loading}
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
-          >
-            {loading ? <span className="spinner" /> : <RefreshCw size={14} />} 重新检查
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => workbookPath && run(workbookPath)}
+          disabled={!workbookPath || loading}
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
+        >
+          {loading ? <span className="spinner" /> : <RefreshCw size={14} />} 重新检查
+        </button>
       </header>
 
       {/* 概览 chips（兼作筛选） */}
