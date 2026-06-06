@@ -1,0 +1,15 @@
+{
+  "name": "excel2rpy-desktop",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Excel→RenPy 转换 + 批量 TTS 的现代化 Electron 桌面应用（重构自根目录的 Python 工具）",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "build": "pnpm -r --if-present build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron", "esbuild"]
+  }
+}
