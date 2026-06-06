@@ -13,6 +13,8 @@ import type {
   E2rApi,
   PreviewArgs,
   PreviewResult,
+  ProjectManifest,
+  ProjectReadResult,
   ProjectResult,
   SaveResult,
   TableResult,
@@ -36,6 +38,11 @@ const api: E2rApi = {
   selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
   openJson: () => ipcRenderer.invoke('dialog:openJson'),
   saveJson: (defaultName?: string) => ipcRenderer.invoke('dialog:saveJson', defaultName),
+  openProjectDialog: () => ipcRenderer.invoke('dialog:openProject'),
+  saveProjectDialog: (defaultName?: string) => ipcRenderer.invoke('dialog:saveProject', defaultName),
+  readProject: (path: string): Promise<ProjectReadResult> => ipcRenderer.invoke('project:read', path),
+  writeProject: (path: string, manifest: ProjectManifest): Promise<SaveResult> =>
+    ipcRenderer.invoke('project:write', path, manifest),
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
   validateFormat: (xlsxPath: string): Promise<FormatResult> =>

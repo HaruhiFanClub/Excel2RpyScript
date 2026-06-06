@@ -69,6 +69,18 @@ export interface DeployArgs {
 export type DeployResult =
   | { ok: true; gamePath: string; written: string[] }
   | { ok: false; error: string }
+
+// .e2rproj 工程文件
+export interface ProjectManifest {
+  version: 1
+  workbook: string
+  renpyProject?: string
+  ttsConfig?: string
+  mode: ConversionMode
+}
+export type ProjectReadResult =
+  | { ok: true; manifest: ProjectManifest }
+  | { ok: false; error: string }
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
 export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
@@ -115,6 +127,10 @@ export interface E2rApi {
   selectDir(): Promise<string | null>
   openJson(): Promise<string | null>
   saveJson(defaultName?: string): Promise<string | null>
+  openProjectDialog(): Promise<string | null>
+  saveProjectDialog(defaultName?: string): Promise<string | null>
+  readProject(path: string): Promise<ProjectReadResult>
+  writeProject(path: string, manifest: ProjectManifest): Promise<SaveResult>
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
   validateFormat(xlsxPath: string): Promise<FormatResult>

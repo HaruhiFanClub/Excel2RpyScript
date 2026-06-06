@@ -8,10 +8,13 @@ import {
   Moon,
   Sun,
   Info,
+  FolderOpen,
+  Save,
   type LucideIcon,
 } from 'lucide-react'
 import { useThemeStore } from '../stores/useThemeStore'
 import { useUiStore } from '../stores/useUiStore'
+import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 
 export type PageId = 'convert' | 'table' | 'tts' | 'check' | 'project'
 
@@ -68,6 +71,8 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
   const theme = useThemeStore((s) => s.theme)
   const toggleTheme = useThemeStore((s) => s.toggleTheme)
   const openSettings = useUiStore((s) => s.openSettings)
+  const openProjectFile = useWorkspaceStore((s) => s.openProjectFile)
+  const saveProjectFile = useWorkspaceStore((s) => s.saveProjectFile)
 
   return (
     <aside className="flex h-full w-[228px] shrink-0 flex-col border-r border-app-border bg-white/35 backdrop-blur-md dark:bg-zinc-900/30">
@@ -103,6 +108,16 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
       <div className="flex-1" />
 
       <div className="flex flex-col gap-0.5 border-t border-app-border px-2 py-2">
+        <Item
+          onClick={openProjectFile}
+          icon={<FolderOpen size={15} strokeWidth={1.8} />}
+          label="打开工程"
+        />
+        <Item
+          onClick={() => void saveProjectFile()}
+          icon={<Save size={15} strokeWidth={1.8} />}
+          label="保存工程"
+        />
         <Item
           onClick={toggleTheme}
           icon={theme === 'dark' ? <Sun size={15} strokeWidth={1.8} /> : <Moon size={15} strokeWidth={1.8} />}

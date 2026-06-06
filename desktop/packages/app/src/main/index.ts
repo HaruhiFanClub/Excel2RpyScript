@@ -44,7 +44,10 @@ import type {
   EngineStartResult,
   EngineStatus,
   FormatResult,
+  ProjectManifest,
+  ProjectReadResult,
 } from '../shared/ipc'
+import { readFile } from 'node:fs/promises'
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
@@ -121,6 +124,40 @@ function registerIpc(): void {
     })
     return r.canceled ? null : (r.filePath ?? null)
   })
+
+  ipcMain.handle('dialog:openProject', async (): Promise<string | null> => {
+    const r = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Excel2Rpy 工程', extensions: ['e2rproj'] }],
+    })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+  ipcMain.handle('dialog:saveProject', async (_e, defaultName?: string): Promise<string | null> => {
+    const r = await dialog.showSaveDialog({
+      defaultPath: defaultName ?? 'project.e2rproj',
+      filters: [{ name: 'Excel2Rpy 工程', extensions: ['e2rproj'] }],
+    })
+    return r.canceled ? null : (r.filePath ?? null)
+  })
+  ipcMain.handle('project:read', async (_e, path: string): Promise<ProjectReadResult> => {
+    try {
+      const manifest = JSON.parse(await readFile(path, 'utf-8')) as ProjectManifest
+      return { ok: true, manifest }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
+  ipcMain.handle(
+    'project:write',
+    async (_e, path: string, manifest: ProjectManifest): Promise<SaveResult> => {
+      try {
+        await writeFile(path, JSON.stringify(manifest, null, 2) + '\n', 'utf-8')
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: errMsg(e) }
+      }
+    },
+  )
 
   ipcMain.handle(
     'tts:saveConfig',
