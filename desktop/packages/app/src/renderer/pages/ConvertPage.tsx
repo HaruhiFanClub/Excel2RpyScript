@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   FileSpreadsheet,
   Eye,
@@ -12,6 +12,7 @@ import {
 import type { ConversionMode } from '@e2r/core'
 import type { ConvertResult, PreviewData, PreviewResult, RpyFile } from '../../shared/ipc'
 import { PathPicker } from '../components/PathPicker'
+import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 
 const MODES: { id: ConversionMode; label: string; hint: string }[] = [
   { id: 'default', label: '默认', hint: '修正 + 告警' },
@@ -19,9 +20,12 @@ const MODES: { id: ConversionMode; label: string; hint: string }[] = [
 ]
 
 export default function ConvertPage() {
-  const [workbookPath, setWorkbookPath] = useState('')
-  const [outputDir, setOutputDir] = useState('')
-  const [mode, setMode] = useState<ConversionMode>('default')
+  const workbookPath = useWorkspaceStore((s) => s.workbookPath)
+  const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
+  const outputDir = useWorkspaceStore((s) => s.outputDir)
+  const setOutputDir = useWorkspaceStore((s) => s.setOutputDir)
+  const mode = useWorkspaceStore((s) => s.mode)
+  const setMode = useWorkspaceStore((s) => s.setMode)
 
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [exportedDir, setExportedDir] = useState<string | null>(null)
@@ -72,22 +76,6 @@ export default function ConvertPage() {
       setLoading(null)
     }
   }
-
-  // 开发钩子：E2R_DEMO 自动预览
-  const demoRan = useRef(false)
-  useEffect(() => {
-    const demo = window.e2r.demoFile
-    if (demo && !demoRan.current) {
-      demoRan.current = true
-      setWorkbookPath(demo)
-      setLoading('preview')
-      window.e2r
-        .preview({ xlsxPath: demo, mode: 'default' })
-        .then((r) => apply(r, null))
-        .finally(() => setLoading(null))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const activeFile: RpyFile | undefined = preview?.files[activeIndex]
 

@@ -57,6 +57,12 @@ function valueToCell(value: ExcelJS.CellValue, warns: () => void): CellValue {
   return EMPTY
 }
 
+// 读取单个 ExcelJS 单元格 → CellValue（含合并区处理），供工作簿/表格读取共用。
+export function readExcelCell(cell: ExcelJS.Cell, onWarn: () => void = () => {}): CellValue {
+  if (cell.isMerged && cell.master && cell.master.address !== cell.address) return EMPTY
+  return valueToCell(cell.value, onWarn)
+}
+
 export async function readRawWorkbook(
   filePath: string,
 ): Promise<{ sheets: RawSheet[]; warnings: ReadWorkbookWarning[] }> {
@@ -73,16 +79,10 @@ export async function readRawWorkbook(
       const row = ws.getRow(r)
       const cells: CellValue[] = []
       for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) {
-        const cell = row.getCell(c)
-        // 合并区非左上角 → 视为空（对齐 xlrd）
-        if (cell.isMerged && cell.master && cell.master.address !== cell.address) {
-          cells.push(EMPTY)
-          continue
-        }
         const rr = r
         const cc = c
         cells.push(
-          valueToCell(cell.value, () =>
+          readExcelCell(row.getCell(c), () =>
             warnings.push({
               sheet: ws.name,
               row: rr,

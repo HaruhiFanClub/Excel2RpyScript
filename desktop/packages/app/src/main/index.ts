@@ -1,7 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'node:path'
+import { readTable } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
-import type { ConvertArgs, ConvertResult, PreviewArgs, PreviewResult } from '../shared/ipc'
+import type {
+  ConvertArgs,
+  ConvertResult,
+  PreviewArgs,
+  PreviewResult,
+  TableResult,
+} from '../shared/ipc'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -18,9 +25,10 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
-      additionalArguments: process.env['E2R_DEMO']
-        ? [`--e2r-demo=${process.env['E2R_DEMO']}`]
-        : [],
+      additionalArguments: [
+        ...(process.env['E2R_DEMO'] ? [`--e2r-demo=${process.env['E2R_DEMO']}`] : []),
+        ...(process.env['E2R_PAGE'] ? [`--e2r-page=${process.env['E2R_PAGE']}`] : []),
+      ],
     },
   })
 
@@ -56,6 +64,14 @@ function registerIpc(): void {
   ipcMain.handle('convert', (_e, args: ConvertArgs): Promise<ConvertResult> =>
     convertWorkbook(args),
   )
+  ipcMain.handle('table:read', async (_e, xlsxPath: string): Promise<TableResult> => {
+    try {
+      const data = await readTable(xlsxPath)
+      return { ok: true, ...data }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 }
 
 void app.whenReady().then(() => {

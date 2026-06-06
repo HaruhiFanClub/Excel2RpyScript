@@ -1,12 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AudioLines, ClipboardCheck, FolderKanban } from 'lucide-react'
 import { Sidebar, type PageId } from './components/Sidebar'
 import { PlaceholderView } from './components/PlaceholderView'
 import ConvertPage from './pages/ConvertPage'
+import TablePage from './pages/TablePage'
+import { useWorkspaceStore } from './stores/useWorkspaceStore'
+
+const PAGES: PageId[] = ['convert', 'table', 'tts', 'check', 'project']
 
 export function App(): JSX.Element {
-  const [page, setPage] = useState<PageId>('convert')
+  const initial = (window.e2r.demoPage as PageId | null) ?? null
+  const [page, setPage] = useState<PageId>(initial && PAGES.includes(initial) ? initial : 'convert')
+
+  // 开发钩子：E2R_DEMO 预置工作簿（两个页面共享）
+  const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
+  useEffect(() => {
+    if (window.e2r.demoFile) setWorkbookPath(window.e2r.demoFile)
+  }, [setWorkbookPath])
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-app-bg text-app-text">
@@ -35,8 +46,13 @@ export function App(): JSX.Element {
                 transition={{ duration: 0.18, ease: 'easeOut' }}
                 className="custom-scrollbar h-full overflow-y-auto"
               >
-                <div className="mx-auto h-full max-w-5xl px-8 pb-7 pt-10">
+                <div
+                  className={`mx-auto h-full px-8 pb-7 pt-10 ${
+                    page === 'table' ? 'max-w-none' : 'max-w-5xl'
+                  }`}
+                >
                   {page === 'convert' && <ConvertPage />}
+                  {page === 'table' && <TablePage />}
                   {page === 'tts' && (
                     <PlaceholderView
                       icon={AudioLines}

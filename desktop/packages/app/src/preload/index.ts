@@ -1,13 +1,22 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { ConvertArgs, ConvertResult, E2rApi, PreviewArgs, PreviewResult } from '../shared/ipc'
+import type {
+  ConvertArgs,
+  ConvertResult,
+  E2rApi,
+  PreviewArgs,
+  PreviewResult,
+  TableResult,
+} from '../shared/ipc'
 
 const demoArg = process.argv.find((a) => a.startsWith('--e2r-demo='))
+const pageArg = process.argv.find((a) => a.startsWith('--e2r-page='))
 
 const api: E2rApi = {
   openXlsx: () => ipcRenderer.invoke('dialog:openXlsx'),
   selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
+  readTable: (xlsxPath: string): Promise<TableResult> => ipcRenderer.invoke('table:read', xlsxPath),
   pathForFile: (file: File): string => {
     try {
       return webUtils.getPathForFile(file)
@@ -16,6 +25,7 @@ const api: E2rApi = {
     }
   },
   demoFile: demoArg ? demoArg.slice('--e2r-demo='.length) : null,
+  demoPage: pageArg ? pageArg.slice('--e2r-page='.length) : null,
 }
 
 contextBridge.exposeInMainWorld('e2r', api)

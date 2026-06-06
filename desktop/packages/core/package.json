@@ -7,7 +7,9 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./xlsx": "./src/xlsx/readWorkbook.ts"
+    "./xlsx": "./src/xlsx/readWorkbook.ts",
+    "./table": "./src/tableColumns.ts",
+    "./settings": "./src/settings/converterSetting.ts"
   },
   "scripts": {
     "test": "vitest run",
