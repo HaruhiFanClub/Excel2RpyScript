@@ -24,7 +24,7 @@ export function App(): JSX.Element {
     if (window.e2r.demoFile) setWorkbookPath(window.e2r.demoFile)
     if (window.e2r.demoTtsConfig) setTtsConfigPath(window.e2r.demoTtsConfig)
     const st = useWorkspaceStore.getState()
-    const dir = window.e2r.demoProject ?? st.renpyDir
+    const dir = window.e2r.demoProject ?? (window.e2r.demoUnlink ? '' : st.renpyDir)
     if (dir && !st.assets) void linkProject(dir)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

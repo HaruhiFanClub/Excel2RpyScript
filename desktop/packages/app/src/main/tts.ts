@@ -66,10 +66,15 @@ export async function ttsHealth(
 ): Promise<{ ok: boolean; device?: string; version?: string; error?: string }> {
   try {
     const r = await fetch(`${baseUrl}health`)
-    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` }
-    const j = (await r.json()) as { device?: string; version?: string }
-    return { ok: true, device: j.device, version: j.version }
+    if (r.ok) {
+      const j = (await r.json().catch(() => ({}))) as { device?: string; version?: string }
+      return { ok: true, device: j.device, version: j.version }
+    }
+    // 网关错误（502/503/504）= 上游不可达 → 离线；其余有应答（如 404 无 /health）→ 视为可达
+    if (r.status >= 502 && r.status <= 504) return { ok: false, error: `HTTP ${r.status}` }
+    return { ok: true }
   } catch (e) {
+    // 仅网络层失败（DNS/拒绝连接/超时）才算离线
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }

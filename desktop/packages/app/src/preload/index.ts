@@ -93,6 +93,7 @@ const api: E2rApi = {
   demoPage: pageArg ? pageArg.slice('--e2r-page='.length) : null,
   demoProject: projArg ? projArg.slice('--e2r-project='.length) : null,
   demoTtsConfig: ttsCfgArg ? ttsCfgArg.slice('--e2r-ttsconfig='.length) : null,
+  demoUnlink: process.argv.includes('--e2r-unlink'),
 }
 
 contextBridge.exposeInMainWorld('e2r', api)

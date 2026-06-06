@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } from 'electron'
-import { join, normalize, dirname } from 'node:path'
+import { join, dirname } from 'node:path'
 import { writeFile, mkdir, copyFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -20,6 +20,7 @@ import {
   parseLegacyTtsConfig,
   serializeTtsConfig,
   BUILTIN_PRESETS,
+  resolveAssetTarget,
   runPipeline,
   writeRpyFiles,
   type CellEdit,
@@ -62,6 +63,7 @@ protocol.registerSchemesAsPrivileged([
 
 let linkedGamePath: string | null = null
 let linkedTransforms: string[] = []
+let currentAudioDir: string | null = null // 当前 TTS 音频目录（关联=game/audio，未关联=表旁 audio）
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -83,6 +85,7 @@ function createWindow(): void {
         ...(process.env['E2R_PAGE'] ? [`--e2r-page=${process.env['E2R_PAGE']}`] : []),
         ...(process.env['E2R_PROJECT'] ? [`--e2r-project=${process.env['E2R_PROJECT']}`] : []),
         ...(process.env['E2R_TTSCONFIG'] ? [`--e2r-ttsconfig=${process.env['E2R_TTSCONFIG']}`] : []),
+        ...(process.env['E2R_UNLINK'] ? ['--e2r-unlink'] : []),
       ],
     },
   })
@@ -294,8 +297,11 @@ function registerIpc(): void {
   })
 
   // ---- TTS ----
-  const audioDirFor = (xlsxPath: string): string =>
-    linkedGamePath ? join(linkedGamePath, 'audio') : join(dirname(xlsxPath), 'audio')
+  const audioDirFor = (xlsxPath: string): string => {
+    const dir = linkedGamePath ? join(linkedGamePath, 'audio') : join(dirname(xlsxPath), 'audio')
+    currentAudioDir = dir // 记录给 asset:// 试听（含未关联工程）
+    return dir
+  }
 
   ipcMain.handle('tts:loadConfig', async (_e, path: string): Promise<TtsConfigResult> => {
     try {
@@ -384,15 +390,11 @@ function registerIpc(): void {
 
 void app.whenReady().then(() => {
   protocol.handle('asset', (request) => {
-    if (!linkedGamePath) return new Response('no project', { status: 404 })
     try {
       const url = new URL(request.url)
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
-      const root = normalize(linkedGamePath)
-      const abs = normalize(join(root, rel))
-      if (abs !== root && !abs.startsWith(root + (root.endsWith('/') ? '' : '/'))) {
-        return new Response('forbidden', { status: 403 })
-      }
+      const abs = resolveAssetTarget(rel, linkedGamePath, currentAudioDir)
+      if (!abs) return new Response('not found', { status: 404 })
       return net.fetch(pathToFileURL(abs).toString())
     } catch {
       return new Response('error', { status: 500 })

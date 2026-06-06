@@ -29,7 +29,6 @@ type RunState = 'running' | 'done' | 'error'
 
 export default function TtsPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const assets = useWorkspaceStore((s) => s.assets)
   const ttsConfigPath = useWorkspaceStore((s) => s.ttsConfigPath)
   const setTtsConfigPath = useWorkspaceStore((s) => s.setTtsConfigPath)
 
@@ -142,7 +141,7 @@ export default function TtsPage() {
   )
 
   const audition = (job: EnrichedJob) => {
-    if (!assets) return
+    // 试听不依赖关联工程：音频由 asset:// 从当前 TTS 音频目录解析（含未关联时表旁 audio）
     setAudio({ url: assetUrl(`audio/${job.outputName}`), title: job.outputName })
   }
 
@@ -297,7 +296,7 @@ export default function TtsPage() {
                     </td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-center gap-1">
-                        {j.status !== 'missing' && assets && (
+                        {j.status !== 'missing' && (
                           <button
                             onClick={() => audition(j)}
                             className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 hover:bg-sky-500/30 dark:text-sky-300"

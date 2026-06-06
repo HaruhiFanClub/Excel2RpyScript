@@ -174,4 +174,6 @@ export interface E2rApi {
   demoProject: string | null
   /** 开发用：通过 E2R_TTSCONFIG 预置 TTS 配置 */
   demoTtsConfig: string | null
+  /** 开发用：通过 E2R_UNLINK 强制不关联工程（跳过持久化重连） */
+  demoUnlink: boolean
 }
