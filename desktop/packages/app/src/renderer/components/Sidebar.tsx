@@ -24,7 +24,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'convert', label: '转换', icon: ArrowLeftRight },
   { id: 'table', label: '表格', icon: TableProperties },
-  { id: 'tts', label: '语音合成', icon: AudioLines, badge: 'WIP' },
+  { id: 'tts', label: '语音合成', icon: AudioLines },
   { id: 'check', label: '检查', icon: ClipboardCheck },
   { id: 'project', label: '工程', icon: FolderKanban, badge: 'WIP' },
 ]

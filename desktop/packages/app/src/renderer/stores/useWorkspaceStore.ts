@@ -7,9 +7,11 @@ interface WorkspaceState {
   outputDir: string
   mode: ConversionMode
   assets: AssetIndex | null // 关联的 Ren'Py 工程资源索引
+  ttsConfigPath: string // TTS 预设 config.json 路径
   setWorkbookPath: (p: string) => void
   setOutputDir: (p: string) => void
   setMode: (m: ConversionMode) => void
+  setTtsConfigPath: (p: string) => void
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
   clearProject: () => void
 }
@@ -20,9 +22,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   outputDir: '',
   mode: 'default',
   assets: null,
+  ttsConfigPath: '',
   setWorkbookPath: (workbookPath) => set({ workbookPath }),
   setOutputDir: (outputDir) => set({ outputDir }),
   setMode: (mode) => set({ mode }),
+  setTtsConfigPath: (ttsConfigPath) => set({ ttsConfigPath }),
   linkProject: async (dir) => {
     const r = await window.e2r.linkProject(dir)
     if (r.ok) {

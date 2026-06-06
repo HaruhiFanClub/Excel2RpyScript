@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
-import { join, normalize } from 'node:path'
+import { join, normalize, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { loadTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
 import {
   readTable,
   saveTableEdits,
@@ -10,6 +11,7 @@ import {
   scanRenpyAssets,
   resolveGamePath,
   diffWorkbooks,
+  parseLegacyTtsConfig,
   type CellEdit,
 } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
@@ -23,7 +25,15 @@ import type {
   CheckResult,
   ProjectResult,
   DiffResult,
+  TtsConfigResult,
+  TtsHealth,
+  TtsJobsArgs,
+  TtsJobsResult,
+  TtsSynthArgs,
+  TtsSynthSummary,
 } from '../shared/ipc'
+
+const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 // asset:// 协议：把关联工程 game/ 下的文件喂给渲染进程（图片/音频预览）
 protocol.registerSchemesAsPrivileged([
@@ -81,6 +91,14 @@ function registerIpc(): void {
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
 
+  ipcMain.handle('dialog:openJson', async (): Promise<string | null> => {
+    const r = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+
   ipcMain.handle('preview', (_e, args: PreviewArgs): Promise<PreviewResult> =>
     previewWorkbook(args),
   )
@@ -131,6 +149,78 @@ function registerIpc(): void {
       return { ok: true, ...index }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  // ---- TTS ----
+  const audioDirFor = (xlsxPath: string): string =>
+    linkedGamePath ? join(linkedGamePath, 'audio') : join(dirname(xlsxPath), 'audio')
+
+  ipcMain.handle('tts:loadConfig', async (_e, path: string): Promise<TtsConfigResult> => {
+    try {
+      return { ok: true, config: await loadTtsConfig(path) }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
+  ipcMain.handle('tts:health', (_e, baseUrl: string): Promise<TtsHealth> => ttsHealth(baseUrl))
+  ipcMain.handle('tts:jobs', async (_e, args: TtsJobsArgs): Promise<TtsJobsResult> => {
+    try {
+      const cfg = args.configPath ? await loadTtsConfig(args.configPath) : parseLegacyTtsConfig({})
+      const audioDir = audioDirFor(args.xlsxPath)
+      const jobs = await enrichedJobs(args.xlsxPath, args.useVoiceText, cfg, args.textLang, audioDir)
+      return { ok: true, jobs, audioDir }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
+  ipcMain.handle('tts:synthesize', async (e, args: TtsSynthArgs): Promise<TtsSynthSummary> => {
+    try {
+      const cfg = await loadTtsConfig(args.configPath)
+      let jobs = await planJobs(args.xlsxPath, args.useVoiceText)
+      if (args.only) {
+        const set = new Set(args.only)
+        jobs = jobs.filter((j) => set.has(j.outputName))
+      }
+      const audioDir = audioDirFor(args.xlsxPath)
+      let done = 0
+      let failed = 0
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i]!
+        e.sender.send('tts:progress', {
+          outputName: job.outputName,
+          index: i,
+          total: jobs.length,
+          status: 'running',
+        })
+        try {
+          await synthOne(job, {
+            cfg,
+            audioDir,
+            textLang: args.textLang,
+            promptLang: args.promptLang,
+          })
+          done++
+          e.sender.send('tts:progress', {
+            outputName: job.outputName,
+            index: i,
+            total: jobs.length,
+            status: 'done',
+          })
+        } catch (err) {
+          failed++
+          e.sender.send('tts:progress', {
+            outputName: job.outputName,
+            index: i,
+            total: jobs.length,
+            status: 'error',
+            error: errMsg(err),
+          })
+        }
+      }
+      return { ok: failed === 0, done, failed }
+    } catch (e2) {
+      return { ok: false, done: 0, failed: 0, error: errMsg(e2) }
     }
   })
 }

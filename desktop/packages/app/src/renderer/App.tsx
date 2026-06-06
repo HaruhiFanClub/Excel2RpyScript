@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AudioLines, FolderKanban } from 'lucide-react'
+import { FolderKanban } from 'lucide-react'
 import { Sidebar, type PageId } from './components/Sidebar'
 import { PlaceholderView } from './components/PlaceholderView'
 import ConvertPage from './pages/ConvertPage'
 import TablePage from './pages/TablePage'
 import CheckPage from './pages/CheckPage'
+import TtsPage from './pages/TtsPage'
 import { WorkspaceBar } from './components/WorkspaceBar'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 
@@ -58,13 +59,7 @@ export function App(): JSX.Element {
                 >
                   {page === 'convert' && <ConvertPage />}
                   {page === 'table' && <TablePage />}
-                  {page === 'tts' && (
-                    <PlaceholderView
-                      icon={AudioLines}
-                      title="语音合成"
-                      desc="内置 GPT-SoVITS · 批量/单句合成 · 试听 · 语气映射"
-                    />
-                  )}
+                  {page === 'tts' && <TtsPage />}
                   {page === 'check' && <CheckPage />}
                   {page === 'project' && (
                     <PlaceholderView

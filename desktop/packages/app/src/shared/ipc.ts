@@ -7,9 +7,50 @@ import type {
   CheckIssue,
   AssetIndex,
   DiffReport,
+  TtsConfig,
+  TtsJob,
+  EnrichedJob,
 } from '@e2r/core'
 
-export type { CellEdit, CheckIssue, AssetIndex, DiffReport }
+export type { CellEdit, CheckIssue, AssetIndex, DiffReport, TtsConfig, TtsJob, EnrichedJob }
+
+export type TtsConfigResult = { ok: true; config: TtsConfig } | { ok: false; error: string }
+export interface TtsHealth {
+  ok: boolean
+  device?: string
+  version?: string
+  error?: string
+}
+export interface TtsJobsArgs {
+  xlsxPath: string
+  useVoiceText: boolean
+  configPath?: string
+  textLang: string
+}
+export type TtsJobsResult =
+  | { ok: true; jobs: EnrichedJob[]; audioDir: string }
+  | { ok: false; error: string }
+export interface TtsSynthArgs {
+  xlsxPath: string
+  configPath: string
+  useVoiceText: boolean
+  textLang: string
+  promptLang: string
+  only?: string[] // 限定要合成的 outputName；缺省=全部
+}
+export interface TtsProgress {
+  outputName: string
+  index: number
+  total: number
+  status: 'running' | 'done' | 'error'
+  error?: string
+}
+export interface TtsSynthSummary {
+  ok: boolean
+  done: number
+  failed: number
+  error?: string
+}
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
 export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
@@ -54,6 +95,7 @@ export type ConvertResult =
 export interface E2rApi {
   openXlsx(): Promise<string | null>
   selectDir(): Promise<string | null>
+  openJson(): Promise<string | null>
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
   readTable(xlsxPath: string): Promise<TableResult>
@@ -61,6 +103,11 @@ export interface E2rApi {
   check(xlsxPath: string): Promise<CheckResult>
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
+  ttsLoadConfig(path: string): Promise<TtsConfigResult>
+  ttsHealth(baseUrl: string): Promise<TtsHealth>
+  ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
+  ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>
+  onTtsProgress(cb: (p: TtsProgress) => void): () => void
   pathForFile(file: File): string
   /** 开发用：通过 E2R_DEMO 自动载入一个表格（自动化截图/验证） */
   demoFile: string | null
