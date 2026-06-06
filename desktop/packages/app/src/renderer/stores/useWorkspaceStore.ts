@@ -14,6 +14,7 @@ interface WorkspaceState {
   setMode: (m: ConversionMode) => void
   setTtsConfigPath: (p: string) => void
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
+  setAssets: (a: AssetIndex) => void
   clearProject: () => void
   openProjectFile: () => Promise<void>
   saveProjectFile: (saveAs?: boolean) => Promise<boolean>
@@ -46,6 +47,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
     return { ok: false, error: r.error }
   },
+  setAssets: (assets) => set({ assets }),
   clearProject: () => set({ assets: null }),
   openProjectFile: async () => {
     const path = await window.e2r.openProjectDialog()

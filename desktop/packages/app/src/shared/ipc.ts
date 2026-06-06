@@ -139,6 +139,7 @@ export interface E2rApi {
   check(xlsxPath: string): Promise<CheckResult>
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
+  importAsset(category: 'image' | 'audio', name: string): Promise<ProjectResult>
   ttsLoadConfig(path: string): Promise<TtsConfigResult>
   ttsSaveConfig(path: string, config: TtsConfig): Promise<SaveResult>
   ttsHealth(baseUrl: string): Promise<TtsHealth>

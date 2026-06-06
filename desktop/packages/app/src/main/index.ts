@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
 import { join, normalize, dirname } from 'node:path'
-import { writeFile } from 'node:fs/promises'
+import { writeFile, mkdir, copyFile } from 'node:fs/promises'
+import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
@@ -13,6 +14,8 @@ import {
   summarize,
   scanRenpyAssets,
   resolveGamePath,
+  IMAGE_EXTS,
+  AUDIO_EXTS,
   diffWorkbooks,
   parseLegacyTtsConfig,
   serializeTtsConfig,
@@ -230,6 +233,32 @@ function registerIpc(): void {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
+
+  // 从表格导入资源到关联工程（立绘/背景→images，音乐/音效→audio）
+  ipcMain.handle(
+    'asset:import',
+    async (_e, category: 'image' | 'audio', name: string): Promise<ProjectResult> => {
+      try {
+        if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
+        const filters =
+          category === 'image'
+            ? [{ name: '图片', extensions: IMAGE_EXTS }]
+            : [{ name: '音频', extensions: AUDIO_EXTS }]
+        const r = await dialog.showOpenDialog({ properties: ['openFile'], filters })
+        const src = r.canceled ? null : r.filePaths[0]
+        if (!src) return { ok: false, error: '' } // 取消
+        const sub = category === 'image' ? 'images' : 'audio'
+        const dest = join(linkedGamePath, sub, `${name}${extname(src)}`)
+        await mkdir(join(linkedGamePath, sub), { recursive: true })
+        await copyFile(src, dest)
+        const index = await scanRenpyAssets(linkedGamePath)
+        linkedTransforms = index.transforms
+        return { ok: true, ...index }
+      } catch (e) {
+        return { ok: false, error: errMsg(e) }
+      }
+    },
+  )
 
   // ---- 部署到 Ren'Py ----
   ipcMain.handle('project:deploy', async (_e, args: DeployArgs): Promise<DeployResult> => {

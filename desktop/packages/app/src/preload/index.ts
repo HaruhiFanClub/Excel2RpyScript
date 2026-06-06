@@ -54,6 +54,8 @@ const api: E2rApi = {
   diff: (oldPath: string, newPath: string): Promise<DiffResult> =>
     ipcRenderer.invoke('diff', oldPath, newPath),
   linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
+  importAsset: (category: 'image' | 'audio', name: string): Promise<ProjectResult> =>
+    ipcRenderer.invoke('asset:import', category, name),
   ttsLoadConfig: (path: string): Promise<TtsConfigResult> =>
     ipcRenderer.invoke('tts:loadConfig', path),
   ttsSaveConfig: (path: string, config: TtsConfig): Promise<SaveResult> =>

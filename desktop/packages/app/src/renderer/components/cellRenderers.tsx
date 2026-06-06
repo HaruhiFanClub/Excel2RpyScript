@@ -1,5 +1,5 @@
 import type { CustomCellRendererProps } from 'ag-grid-react'
-import { Play, Music } from 'lucide-react'
+import { Play, Music, Upload } from 'lucide-react'
 import {
   spriteImageName,
   resolveImage,
@@ -16,9 +16,24 @@ export interface GridContext {
   ttsConfig: TtsConfig | null
   onImage: (url: string, title: string) => void
   onAudio: (url: string, title: string) => void
+  onImport: (category: 'image' | 'audio', name: string) => void
 }
 
 const ctxOf = (p: CustomCellRendererProps): GridContext => p.context as GridContext
+
+// 关联工程但未命中资源时的「导入」按钮
+function ImportBtn(props: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className="flex h-5 shrink-0 items-center gap-0.5 rounded border border-dashed border-app-border px-1 text-[10px] text-app-muted hover:border-sky-400 hover:text-sky-500"
+      title="导入到工程"
+    >
+      <Upload size={10} /> 导入
+    </button>
+  )
+}
 
 // 立绘：每段解析图像名 → 缩略图（点击放大）；未关联工程/未命中 → 名称 chip
 export function SpriteCell(p: CustomCellRendererProps) {
@@ -78,6 +93,7 @@ export function SpriteSlotCell(p: CustomCellRendererProps) {
               />
             )}
             <span className="truncate text-[12px]">{name}</span>
+            {!rel && ctx.assets && <ImportBtn onClick={() => ctx.onImport('image', name)} />}
           </span>
         )
       })}
@@ -131,7 +147,12 @@ export function BgCell(p: CustomCellRendererProps) {
       </div>
     )
   }
-  return <span className="text-[12px]">{raw}</span>
+  return (
+    <div className="flex h-full items-center gap-1.5">
+      <span className="truncate text-[12px]">{raw}</span>
+      {ctx.assets && <ImportBtn onClick={() => ctx.onImport('image', raw)} />}
+    </div>
+  )
 }
 
 // 音乐 / 音效：可播放则给播放按钮
@@ -156,6 +177,7 @@ export function AudioCell(p: CustomCellRendererProps) {
         <Music size={12} className="shrink-0 text-app-muted" />
       )}
       <span className="truncate text-[12px]">{raw}</span>
+      {!rel && name && ctx.assets && <ImportBtn onClick={() => ctx.onImport('audio', name)} />}
     </div>
   )
 }
