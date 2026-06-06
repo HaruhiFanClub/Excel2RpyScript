@@ -40,13 +40,18 @@ describe('scanRenpyAssets', () => {
     writeFileSync(join(game, 'images', 'kyon 0030.png'), 'x')
     writeFileSync(join(game, 'images', 'bg xy005.jpg'), 'x')
     writeFileSync(join(game, 'audio', 'start.mp3'), 'x')
-    writeFileSync(join(game, 'script.rpy'), 'x') // 非资源忽略
+    writeFileSync(
+      join(game, 'script.rpy'),
+      'transform kyon_left:\n    xalign 0.2\ndefine haruhi_mid = Position(xalign=0.5)\n',
+    )
 
     const idx = await scanRenpyAssets(game)
     expect(idx.images['kyon 0030']).toBe('images/kyon 0030.png')
     expect(idx.images['bg xy005']).toBe('images/bg xy005.jpg')
     expect(idx.audio['start']).toBe('audio/start.mp3')
     expect(Object.keys(idx.images)).toHaveLength(2)
+    expect(idx.transforms).toContain('kyon_left')
+    expect(idx.transforms).toContain('haruhi_mid')
   })
 
   it('resolveGamePath 推断 game 目录', () => {

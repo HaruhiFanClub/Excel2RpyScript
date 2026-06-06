@@ -11,6 +11,7 @@ export interface AssetMaps {
 
 export interface AssetIndex extends AssetMaps {
   gamePath: string
+  transforms: string[] // 工程中定义的 transform / Position 名（立绘位置校验用）
 }
 
 // 立绘段 "kyon 0012 kyon_left" → 图像名 "kyon 0012"（去掉末尾位置 token；单 token 原样）

@@ -54,6 +54,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let linkedGamePath: string | null = null
+let linkedTransforms: string[] = []
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -164,7 +165,10 @@ function registerIpc(): void {
   ipcMain.handle('check', async (_e, xlsxPath: string): Promise<CheckResult> => {
     try {
       const { sheets } = await readWorkbook(xlsxPath)
-      const issues = checkSheets(sheets)
+      const issues = checkSheets(
+        sheets,
+        linkedTransforms.length ? { knownPositions: linkedTransforms } : {},
+      )
       return { ok: true, issues, summary: summarize(issues) }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -183,6 +187,7 @@ function registerIpc(): void {
       const gamePath = resolveGamePath(dir)
       const index = await scanRenpyAssets(gamePath)
       linkedGamePath = gamePath
+      linkedTransforms = index.transforms
       return { ok: true, ...index }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }

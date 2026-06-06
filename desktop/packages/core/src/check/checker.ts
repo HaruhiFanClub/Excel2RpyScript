@@ -20,16 +20,18 @@ export interface CheckOptions {
   bgGap?: number // 连续多少行未换背景 → warn
   musicGap?: number // 连续多少行未换音乐 → warn
   maxTextLen?: number // 单行台词字数上限
+  knownPositions?: string[] // 关联工程时的 transform/Position 名；提供后校验立绘位置真实存在
 }
 
-const DEFAULTS: Required<CheckOptions> = {
+const DEFAULTS: Required<Pick<CheckOptions, 'faceGap' | 'bgGap' | 'musicGap' | 'maxTextLen'>> = {
   faceGap: 10,
   bgGap: 80,
   musicGap: 80,
   maxTextLen: 60,
 }
 
-const BUILTIN_POS = new Set(Object.keys(PositionMapping)) // left/right/mid/truecenter
+// 合法内置位置：left/right/center/truecenter + mid（映射到 center）
+const BUILTIN_POS = new Set([...Object.keys(PositionMapping), 'center'])
 const ROW_OFFSET = 8
 
 function cell(row: CellValue[], key: keyof typeof ElementColNumMapping): CellValue {
@@ -39,6 +41,7 @@ function cell(row: CellValue[], key: keyof typeof ElementColNumMapping): CellVal
 export function checkSheets(sheets: ParsedSheet[], options?: CheckOptions): CheckIssue[] {
   const opt = { ...DEFAULTS, ...options }
   const sheetNames = new Set(sheets.map((s) => s.name))
+  const knownPos = options?.knownPositions ? new Set(options.knownPositions) : null
   const issues: CheckIssue[] = []
 
   for (const sheet of sheets) {
@@ -91,7 +94,12 @@ export function checkSheets(sheets: ParsedSheet[], options?: CheckOptions): Chec
           } else {
             const pos = tokens[tokens.length - 1] ?? ''
             if (!BUILTIN_POS.has(pos)) {
-              add('info', 'sprite-custom-pos', `自定义立绘位置"${pos}"，关联 Ren'Py 工程后校验`)
+              if (knownPos) {
+                if (!knownPos.has(pos))
+                  add('error', 'sprite-pos-undefined', `立绘位置"${pos}"在 Ren'Py 工程中未定义`)
+              } else {
+                add('info', 'sprite-custom-pos', `自定义立绘位置"${pos}"，关联 Ren'Py 工程后校验`)
+              }
             }
           }
         }

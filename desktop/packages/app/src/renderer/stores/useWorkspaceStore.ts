@@ -30,7 +30,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   linkProject: async (dir) => {
     const r = await window.e2r.linkProject(dir)
     if (r.ok) {
-      set({ assets: { gamePath: r.gamePath, images: r.images, audio: r.audio } })
+      set({
+        assets: {
+          gamePath: r.gamePath,
+          images: r.images,
+          audio: r.audio,
+          transforms: r.transforms,
+        },
+      })
       return { ok: true }
     }
     return { ok: false, error: r.error }
