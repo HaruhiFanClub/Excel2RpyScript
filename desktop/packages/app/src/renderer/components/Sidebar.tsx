@@ -76,8 +76,8 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
 
   return (
     <aside className="flex h-full w-[228px] shrink-0 flex-col border-r border-app-border bg-white/35 backdrop-blur-md dark:bg-zinc-900/30">
-      {/* 顶部留白（mac 红绿灯 + 拖拽区） */}
-      <div className="drag h-8 shrink-0" />
+      {/* 顶部留白：避开 mac 红绿灯 + 作拖拽区 */}
+      <div className="drag h-11 shrink-0" />
 
       <div className="drag flex items-center gap-2.5 px-4 pb-4">
         <div className="nodrag flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-sky-600 text-[12px] font-bold text-white shadow-sm shadow-sky-500/25">
@@ -125,7 +125,7 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
         />
         <Item onClick={openSettings} icon={<Settings size={15} strokeWidth={1.8} />} label="设置" />
         <Item
-          onClick={() => window.open('https://github.com/HaruhiFanClub/Excel2RpyScript', '_blank')}
+          onClick={() => window.e2r.openExternal('https://github.com/HaruhiFanClub/Excel2RpyScript')}
           icon={<Info size={15} strokeWidth={1.8} />}
           label="关于"
         />

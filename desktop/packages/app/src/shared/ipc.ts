@@ -139,6 +139,7 @@ export interface E2rApi {
   selectDir(): Promise<string | null>
   openJson(): Promise<string | null>
   saveJson(defaultName?: string): Promise<string | null>
+  openExternal(url: string): void
   openProjectDialog(): Promise<string | null>
   saveProjectDialog(defaultName?: string): Promise<string | null>
   readProject(path: string): Promise<ProjectReadResult>

@@ -38,6 +38,9 @@ const api: E2rApi = {
   selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
   openJson: () => ipcRenderer.invoke('dialog:openJson'),
   saveJson: (defaultName?: string) => ipcRenderer.invoke('dialog:saveJson', defaultName),
+  openExternal: (url: string): void => {
+    void ipcRenderer.invoke('shell:openExternal', url)
+  },
   openProjectDialog: () => ipcRenderer.invoke('dialog:openProject'),
   saveProjectDialog: (defaultName?: string) => ipcRenderer.invoke('dialog:saveProject', defaultName),
   readProject: (path: string): Promise<ProjectReadResult> => ipcRenderer.invoke('project:read', path),

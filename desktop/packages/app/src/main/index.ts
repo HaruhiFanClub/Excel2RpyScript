@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } from 'electron'
 import { join, normalize, dirname } from 'node:path'
 import { writeFile, mkdir, copyFile } from 'node:fs/promises'
 import { extname } from 'node:path'
@@ -72,7 +72,7 @@ function createWindow(): void {
     backgroundColor: '#f4f6fb',
     show: false,
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 18, y: 22 } }
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }
       : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -110,6 +110,10 @@ function registerIpc(): void {
   ipcMain.handle('dialog:selectDir', async (): Promise<string | null> => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle('shell:openExternal', (_e, url: string): void => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
   })
 
   ipcMain.handle('dialog:openJson', async (): Promise<string | null> => {
