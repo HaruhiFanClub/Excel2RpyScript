@@ -129,7 +129,8 @@ export default function TtsPage() {
           textLang,
           promptLang,
           ...(only ? { only } : {}),
-          ...(managedUrl ? { baseUrl: managedUrl } : {}),
+          // 仅内嵌模式用内置引擎地址覆盖；远端模式必须用配置里的 apiBaseUrl
+          ...(config?.serviceMode === 'embedded' && managedUrl ? { baseUrl: managedUrl } : {}),
         })
         if (!r.ok && r.error) setError(r.error)
         await refresh()
@@ -137,7 +138,7 @@ export default function TtsPage() {
         setBusy(false)
       }
     },
-    [workbookPath, ttsConfigPath, useVoiceText, textLang, promptLang, refresh, managedUrl],
+    [workbookPath, ttsConfigPath, useVoiceText, textLang, promptLang, refresh, managedUrl, config],
   )
 
   const audition = (job: EnrichedJob) => {

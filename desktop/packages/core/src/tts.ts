@@ -166,13 +166,16 @@ export function serializeTtsConfig(cfg: TtsConfig): unknown {
 
 // 合成输入签名：用于「改过但未重新生成」检测
 export function ttsJobSignature(job: TtsJob, cfg: TtsConfig, textLang: string): string {
-  const model = cfg.roleModelMapping[job.roleName]
+  const remote = cfg.serviceMode === 'remote'
+  const model = remote ? cfg.roleModelMapping[job.roleName] : undefined
   const cmd = cfg.voiceCmdMapping[job.voiceCmd]
   return [
     job.roleName,
     job.text,
     job.voiceCmd,
     textLang,
+    cfg.serviceMode,
+    remote ? cfg.apiBaseUrl : '',
     model?.gpt ?? '',
     model?.sovits ?? '',
     cmd?.refAudioPath ?? cfg.defaultPromptAudio,

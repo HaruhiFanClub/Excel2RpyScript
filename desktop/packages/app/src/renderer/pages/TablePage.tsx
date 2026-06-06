@@ -175,10 +175,16 @@ export default function TablePage() {
         const allCmds = ttsConfig ? Object.keys(ttsConfig.voiceCmdMapping) : []
         // 内嵌模式按行角色过滤语音指令（参考音频按角色分组）；远端模式给全部
         const valuesForRow = (rowData: Row): string[] => {
-          if (!ttsConfig || ttsConfig.serviceMode !== 'embedded') return allCmds
-          const roleKey = resolveRoleKey(ttsConfig, String(rowData['role_name'] ?? ''))
-          const grouped = allCmds.filter((k) => ttsConfig.voiceCmdMapping[k]?.role === roleKey)
-          return grouped.length ? grouped : allCmds
+          const cfg = ttsConfig
+          if (!cfg || cfg.serviceMode !== 'embedded') return allCmds
+          // 配置完全未分组时回退全部；一旦有分组则严格按角色（别名两侧都归一）
+          const anyGrouped = allCmds.some((k) => cfg.voiceCmdMapping[k]?.role)
+          if (!anyGrouped) return allCmds
+          const roleKey = resolveRoleKey(cfg, String(rowData['role_name'] ?? ''))
+          return allCmds.filter((k) => {
+            const r = cfg.voiceCmdMapping[k]?.role
+            return r ? resolveRoleKey(cfg, r) === roleKey : false
+          })
         }
         defs.push({
           headerName: c.header,

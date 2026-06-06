@@ -331,8 +331,10 @@ function registerIpc(): void {
         const set = new Set(args.only)
         jobs = jobs.filter((j) => set.has(j.outputName))
       }
-      // 按角色排序，连续同角色可跳过切权重（大幅提速）
-      jobs = [...jobs].sort((a, b) => a.roleName.localeCompare(b.roleName))
+      // 远端模式：按角色排序，连续同角色跳过切权重（大幅提速）。内嵌不切权重，无需排序。
+      if (cfg.serviceMode === 'remote') {
+        jobs = [...jobs].sort((a, b) => a.roleName.localeCompare(b.roleName))
+      }
       const audioDir = audioDirFor(args.xlsxPath)
       let done = 0
       let failed = 0

@@ -124,4 +124,17 @@ describe('parseLegacyTtsConfig / 签名', () => {
     const j2 = { ...j1, voiceCmd: 'c2' }
     expect(ttsJobSignature(j1, cfg, 'auto')).not.toBe(ttsJobSignature(j2, cfg, 'auto'))
   })
+
+  it('切模式 / 换远端端点 → 签名变化（标记未重新生成）', () => {
+    const sheets = [sheet('S', [row({ role_name: 'A', text: 't', voice: 'tts', voice_cmd: 'c1' })])]
+    const j = planTtsJobs(sheets, { useVoiceText: false })[0]!
+    const remote = parseLegacyTtsConfig({ service_mode: 'remote', API_BASE_URL: { base: 'http://a/' } })
+    const embedded = parseLegacyTtsConfig({ service_mode: 'embedded', API_BASE_URL: { base: 'http://a/' } })
+    const remote2 = parseLegacyTtsConfig({ service_mode: 'remote', API_BASE_URL: { base: 'http://b/' } })
+    expect(ttsJobSignature(j, remote, 'auto')).not.toBe(ttsJobSignature(j, embedded, 'auto'))
+    expect(ttsJobSignature(j, remote, 'auto')).not.toBe(ttsJobSignature(j, remote2, 'auto'))
+    // 内嵌换端点不影响（用内置引擎）
+    const embedded2 = parseLegacyTtsConfig({ service_mode: 'embedded', API_BASE_URL: { base: 'http://b/' } })
+    expect(ttsJobSignature(j, embedded, 'auto')).toBe(ttsJobSignature(j, embedded2, 'auto'))
+  })
 })

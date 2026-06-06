@@ -139,6 +139,12 @@ export function SettingsModal() {
         </div>
       }
     >
+      {builtinNote && (
+        <div className="mb-4 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-600 dark:text-amber-300">
+          这是内置预设（只读）。修改后请用「另存为…」保存为你自己的 config.json。
+        </div>
+      )}
+
       {/* 服务模式 */}
       <div className="mb-4">
         <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-app-muted">服务模式</span>
