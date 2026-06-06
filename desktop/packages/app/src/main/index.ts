@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
 import { join, normalize, dirname } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { loadTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
 import {
@@ -12,7 +13,10 @@ import {
   resolveGamePath,
   diffWorkbooks,
   parseLegacyTtsConfig,
+  runPipeline,
+  writeRpyFiles,
   type CellEdit,
+  type PipelineOptions,
 } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
 import type {
@@ -31,6 +35,8 @@ import type {
   TtsJobsResult,
   TtsSynthArgs,
   TtsSynthSummary,
+  DeployArgs,
+  DeployResult,
 } from '../shared/ipc'
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -149,6 +155,34 @@ function registerIpc(): void {
       return { ok: true, ...index }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
+  // ---- 部署到 Ren'Py ----
+  ipcMain.handle('project:deploy', async (_e, args: DeployArgs): Promise<DeployResult> => {
+    try {
+      if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
+      const { sheets } = await readWorkbook(args.xlsxPath)
+      const opts: PipelineOptions =
+        args.mode === 'default'
+          ? { mode: 'default', normalizeMode: true, trimRoleNames: true }
+          : { mode: 'legacy-compat' }
+      const written: string[] = []
+      if (args.scripts) {
+        const { files } = runPipeline(sheets, opts)
+        await writeRpyFiles(linkedGamePath, files)
+        written.push(...files.map((f) => `${f.label}.rpy`))
+      }
+      if (args.enableVoice) {
+        await writeFile(
+          join(linkedGamePath, 'e2r_config.rpy'),
+          '# 由 Excel2Rpy 生成：启用语音\ndefine config.has_voice = True\n',
+        )
+        written.push('e2r_config.rpy')
+      }
+      return { ok: true, gamePath: linkedGamePath, written }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
     }
   })
 

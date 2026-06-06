@@ -51,6 +51,16 @@ export interface TtsSynthSummary {
   failed: number
   error?: string
 }
+
+export interface DeployArgs {
+  xlsxPath: string
+  mode: ConversionMode
+  scripts: boolean // 写 .rpy 到 game/
+  enableVoice: boolean // 写 e2r_config.rpy 启用 config.has_voice
+}
+export type DeployResult =
+  | { ok: true; gamePath: string; written: string[] }
+  | { ok: false; error: string }
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
 export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
@@ -108,6 +118,7 @@ export interface E2rApi {
   ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
   ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>
   onTtsProgress(cb: (p: TtsProgress) => void): () => void
+  deploy(args: DeployArgs): Promise<DeployResult>
   pathForFile(file: File): string
   /** 开发用：通过 E2R_DEMO 自动载入一个表格（自动化截图/验证） */
   demoFile: string | null

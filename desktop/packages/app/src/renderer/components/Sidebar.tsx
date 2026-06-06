@@ -26,7 +26,7 @@ const navItems: NavItem[] = [
   { id: 'table', label: '表格', icon: TableProperties },
   { id: 'tts', label: '语音合成', icon: AudioLines },
   { id: 'check', label: '检查', icon: ClipboardCheck },
-  { id: 'project', label: '工程', icon: FolderKanban, badge: 'WIP' },
+  { id: 'project', label: '工程', icon: FolderKanban },
 ]
 
 function Item(props: {

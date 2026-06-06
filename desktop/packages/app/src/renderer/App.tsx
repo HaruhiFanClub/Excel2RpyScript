@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { FolderKanban } from 'lucide-react'
 import { Sidebar, type PageId } from './components/Sidebar'
-import { PlaceholderView } from './components/PlaceholderView'
 import ConvertPage from './pages/ConvertPage'
 import TablePage from './pages/TablePage'
 import CheckPage from './pages/CheckPage'
 import TtsPage from './pages/TtsPage'
+import ProjectPage from './pages/ProjectPage'
 import { WorkspaceBar } from './components/WorkspaceBar'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 
@@ -61,13 +60,7 @@ export function App(): JSX.Element {
                   {page === 'table' && <TablePage />}
                   {page === 'tts' && <TtsPage />}
                   {page === 'check' && <CheckPage />}
-                  {page === 'project' && (
-                    <PlaceholderView
-                      icon={FolderKanban}
-                      title="工程"
-                      desc="关联 Ren’Py 工程、资源预览与一键部署"
-                    />
-                  )}
+                  {page === 'project' && <ProjectPage />}
                 </div>
               </motion.div>
             </AnimatePresence>
