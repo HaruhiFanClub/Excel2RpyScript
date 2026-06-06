@@ -63,6 +63,7 @@ const api: E2rApi = {
     ipcRenderer.invoke('tts:loadConfig', path),
   ttsSaveConfig: (path: string, config: TtsConfig): Promise<SaveResult> =>
     ipcRenderer.invoke('tts:saveConfig', path, config),
+  ttsBuiltins: (): Promise<{ id: string; name: string }[]> => ipcRenderer.invoke('tts:builtins'),
   ttsHealth: (baseUrl: string): Promise<TtsHealth> => ipcRenderer.invoke('tts:health', baseUrl),
   ttsJobs: (args: TtsJobsArgs): Promise<TtsJobsResult> => ipcRenderer.invoke('tts:jobs', args),
   ttsSynthesize: (args: TtsSynthArgs): Promise<TtsSynthSummary> =>

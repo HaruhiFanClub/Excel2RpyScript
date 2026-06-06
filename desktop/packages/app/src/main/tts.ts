@@ -7,15 +7,27 @@ import {
   parseLegacyTtsConfig,
   ttsJobSignature,
   toneFor,
+  builtinPreset,
   type TtsConfig,
   type TtsJob,
   type EnrichedJob,
 } from '@e2r/core'
 
 const MANIFEST = '.e2r-tts.json' // 记录每个 wav 的合成输入签名，用于「未重新生成」检测
+const BUILTIN_PREFIX = 'builtin:'
 
 export async function loadTtsConfig(path: string): Promise<TtsConfig> {
   return parseLegacyTtsConfig(JSON.parse(await readFile(path, 'utf-8')))
+}
+
+// 统一解析：builtin:<id> 走内置预设，否则读文件
+export async function resolveTtsConfig(path: string): Promise<TtsConfig> {
+  if (path.startsWith(BUILTIN_PREFIX)) {
+    const cfg = builtinPreset(path.slice(BUILTIN_PREFIX.length))
+    if (!cfg) throw new Error(`未知内置预设：${path}`)
+    return cfg
+  }
+  return loadTtsConfig(path)
 }
 
 async function readManifest(audioDir: string): Promise<Record<string, string>> {
@@ -97,7 +109,8 @@ export function modelForRole(cfg: TtsConfig, roleName: string) {
 // 合成单个任务（切权重 → POST /tts → 落盘）
 export async function synthOne(job: TtsJob, opts: SynthOptions): Promise<void> {
   const base = opts.baseUrl ?? opts.cfg.apiBaseUrl
-  const model = modelForRole(opts.cfg, job.roleName)
+  // 仅远端模式按角色切自定义模型；内嵌 zero-shot 用引擎已加载的基础模型，只靠参考音频克隆
+  const model = opts.cfg.serviceMode === 'remote' ? modelForRole(opts.cfg, job.roleName) : undefined
   if (model && !opts.skipSwitch) {
     if (model.gpt) await fetch(`${base}set_gpt_weights?weights_path=${encodeURIComponent(model.gpt)}`)
     if (model.sovits)

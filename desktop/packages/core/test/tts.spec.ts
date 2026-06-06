@@ -6,6 +6,7 @@ import {
   serializeTtsConfig,
   deriveTone,
 } from '../src/tts'
+import { builtinPreset, BUILTIN_PRESETS } from '../src/presets'
 import { runPipeline, type ParsedSheet } from '../src/index'
 import { EMPTY, textCell, type CellValue } from '../src/parse/cellValue'
 import { ElementColNumMapping, type ColKey } from '../src/settings/converterSetting'
@@ -79,6 +80,7 @@ describe('parseLegacyTtsConfig / 签名', () => {
 
   it('parse ↔ serialize 往返（含 aliases / tone）', () => {
     const src = {
+      service_mode: 'remote',
       role_model_mapping: { 阿虚: { gpt: 'g', sovits: 's', aliases: ['kyon', 'Kyon'] } },
       voice_cmd_mapping: { kyon_1: { ref_audio_path: 'r', prompt_text: 'p', tone: '平静' } },
       default_prompt_audio: 'd',
@@ -88,6 +90,31 @@ describe('parseLegacyTtsConfig / 签名', () => {
     }
     const round = serializeTtsConfig(parseLegacyTtsConfig(src))
     expect(round).toEqual(src)
+  })
+
+  it('内嵌模式：service_mode + 语音指令归属角色 往返', () => {
+    const src = {
+      service_mode: 'embedded',
+      role_model_mapping: { 阿虚: { gpt: '', sovits: '' } },
+      voice_cmd_mapping: { kyon_calm: { ref_audio_path: 'r', prompt_text: 'p', role: '阿虚' } },
+      default_prompt_audio: 'd',
+      default_prompt_text: 'dp',
+      API_BASE_URL: { base: 'http://x/' },
+      deepL_api_key: '',
+    }
+    const cfg = parseLegacyTtsConfig(src)
+    expect(cfg.serviceMode).toBe('embedded')
+    expect(cfg.voiceCmdMapping['kyon_calm']?.role).toBe('阿虚')
+    expect(serializeTtsConfig(cfg)).toEqual(src)
+  })
+
+  it('内置预设：凉宫春日（远端）', () => {
+    expect(BUILTIN_PRESETS.length).toBeGreaterThan(0)
+    const cfg = builtinPreset('haruhi-remote')!
+    expect(cfg.serviceMode).toBe('remote')
+    expect(Object.keys(cfg.roleModelMapping).length).toBe(11)
+    expect(Object.keys(cfg.voiceCmdMapping).length).toBe(150)
+    expect(cfg.roleModelMapping['长门有希']?.gpt).toContain('.ckpt')
   })
 
   it('改语音指令 → 签名变化（未重新生成检测）', () => {

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Save, FolderOpen } from 'lucide-react'
+import { Plus, Trash2, Save, FolderOpen, Server, Cpu } from 'lucide-react'
 import type { TtsConfig } from '../../shared/ipc'
+import type { ServiceMode } from '@e2r/core/tts'
 import { useUiStore } from '../stores/useUiStore'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { Modal } from './Modal'
 
 type RoleRow = { name: string; gpt: string; sovits: string; aliases: string }
-type CmdRow = { cmd: string; ref: string; prompt: string; tone: string }
+type CmdRow = { cmd: string; ref: string; prompt: string; tone: string; role: string }
 
 export function SettingsModal() {
   const open = useUiStore((s) => s.settingsOpen)
@@ -14,6 +15,7 @@ export function SettingsModal() {
   const ttsConfigPath = useWorkspaceStore((s) => s.ttsConfigPath)
   const setTtsConfigPath = useWorkspaceStore((s) => s.setTtsConfigPath)
 
+  const [serviceMode, setServiceMode] = useState<ServiceMode>('remote')
   const [apiBaseUrl, setApiBaseUrl] = useState('http://127.0.0.1:9880/')
   const [defAudio, setDefAudio] = useState('')
   const [defText, setDefText] = useState('')
@@ -21,14 +23,17 @@ export function SettingsModal() {
   const [roles, setRoles] = useState<RoleRow[]>([])
   const [cmds, setCmds] = useState<CmdRow[]>([])
   const [status, setStatus] = useState<string | null>(null)
+  const [builtinNote, setBuiltinNote] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setStatus(null)
+    setBuiltinNote(ttsConfigPath.startsWith('builtin:'))
     if (!ttsConfigPath) return
     window.e2r.ttsLoadConfig(ttsConfigPath).then((r) => {
       if (!r.ok) return
       const c = r.config
+      setServiceMode(c.serviceMode)
       setApiBaseUrl(c.apiBaseUrl)
       setDefAudio(c.defaultPromptAudio)
       setDefText(c.defaultPromptText)
@@ -47,12 +52,16 @@ export function SettingsModal() {
           ref: v.refAudioPath,
           prompt: v.promptText,
           tone: v.tone ?? '',
+          role: v.role ?? '',
         })),
       )
     })
   }, [open, ttsConfigPath])
 
+  const isEmbedded = serviceMode === 'embedded'
+
   const build = (): TtsConfig => ({
+    serviceMode,
     apiBaseUrl,
     defaultPromptAudio: defAudio,
     defaultPromptText: defText,
@@ -63,8 +72,8 @@ export function SettingsModal() {
         .map((r) => [
           r.name.trim(),
           {
-            gpt: r.gpt,
-            sovits: r.sovits,
+            gpt: isEmbedded ? '' : r.gpt,
+            sovits: isEmbedded ? '' : r.sovits,
             ...(r.aliases.trim()
               ? { aliases: r.aliases.split(',').map((s) => s.trim()).filter(Boolean) }
               : {}),
@@ -76,14 +85,19 @@ export function SettingsModal() {
         .filter((c) => c.cmd.trim())
         .map((c) => [
           c.cmd.trim(),
-          { refAudioPath: c.ref, promptText: c.prompt, ...(c.tone.trim() ? { tone: c.tone.trim() } : {}) },
+          {
+            refAudioPath: c.ref,
+            promptText: c.prompt,
+            ...(c.tone.trim() ? { tone: c.tone.trim() } : {}),
+            ...(isEmbedded && c.role.trim() ? { role: c.role.trim() } : {}),
+          },
         ]),
     ),
   })
 
   const save = async (saveAs: boolean) => {
     let path = ttsConfigPath
-    if (saveAs || !path) {
+    if (saveAs || !path || path.startsWith('builtin:')) {
       const p = await window.e2r.saveJson('config.json')
       if (!p) return
       path = p
@@ -103,10 +117,13 @@ export function SettingsModal() {
       open={open}
       onClose={close}
       title="TTS 配置"
-      width={820}
+      width={860}
       footer={
         <div className="flex items-center justify-end gap-2">
           {status && <span className="mr-auto text-[12px] text-app-muted">{status}</span>}
+          {builtinNote && (
+            <span className="mr-auto text-[12px] text-amber-500">内置预设只读，请用「另存为」保存修改</span>
+          )}
           <button
             onClick={() => save(true)}
             className="flex h-9 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3.5 text-[12px] font-medium text-app-text hover:bg-white/80 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
@@ -122,11 +139,31 @@ export function SettingsModal() {
         </div>
       }
     >
+      {/* 服务模式 */}
+      <div className="mb-4">
+        <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-app-muted">服务模式</span>
+        <div className="inline-flex rounded-[10px] border border-app-border bg-black/5 p-0.5 dark:bg-white/5">
+          <ModeBtn active={!isEmbedded} onClick={() => setServiceMode('remote')} icon={<Server size={13} />}>
+            远端服务（自定义模型）
+          </ModeBtn>
+          <ModeBtn active={isEmbedded} onClick={() => setServiceMode('embedded')} icon={<Cpu size={13} />}>
+            内嵌 zero-shot（参考音频）
+          </ModeBtn>
+        </div>
+        <p className="mt-1.5 text-[12px] text-app-muted">
+          {isEmbedded
+            ? '本地引擎按参考音频克隆音色，角色仅用于给参考音频分组（无需配置模型）。'
+            : 'API 调用远端服务器，按角色切换自定义训练模型。'}
+        </p>
+      </div>
+
       {/* 端点 & 默认 */}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="API 端点">
-          <input className="glass-input w-full" value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} />
-        </Field>
+        {!isEmbedded && (
+          <Field label="API 端点">
+            <input className="glass-input w-full" value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} />
+          </Field>
+        )}
         <Field label="DeepL Key（中译日，可空）">
           <input className="glass-input w-full" value={deepL} onChange={(e) => setDeepL(e.target.value)} />
         </Field>
@@ -141,17 +178,24 @@ export function SettingsModal() {
         </Field>
       </div>
 
-      {/* 角色模型 */}
+      {/* 角色 */}
       <Section
-        title="角色 → 模型"
-        hint="角色名对应表格第一列；别名逗号分隔（一个模型绑定多个角色名）"
+        title={isEmbedded ? '角色（参考音频分组）' : '角色 → 模型'}
+        hint={isEmbedded ? '角色名对应表格第一列；别名逗号分隔' : '角色名对应表格第一列；别名 = 一个模型绑定多个角色名'}
         onAdd={() => setRoles((r) => [...r, { name: '', gpt: '', sovits: '', aliases: '' }])}
       >
         {roles.map((r, i) => (
-          <div key={i} className="mb-1.5 grid grid-cols-[120px_1fr_1fr_120px_28px] gap-1.5">
+          <div
+            key={i}
+            className={`mb-1.5 grid gap-1.5 ${isEmbedded ? 'grid-cols-[1fr_1fr_28px]' : 'grid-cols-[120px_1fr_1fr_120px_28px]'}`}
+          >
             <input className="glass-input" placeholder="角色名" value={r.name} onChange={(e) => upd(setRoles, i, { name: e.target.value })} />
-            <input className="glass-input font-mono text-[11px]" placeholder="GPT .ckpt" value={r.gpt} onChange={(e) => upd(setRoles, i, { gpt: e.target.value })} />
-            <input className="glass-input font-mono text-[11px]" placeholder="SoVITS .pth" value={r.sovits} onChange={(e) => upd(setRoles, i, { sovits: e.target.value })} />
+            {!isEmbedded && (
+              <>
+                <input className="glass-input font-mono text-[11px]" placeholder="GPT .ckpt" value={r.gpt} onChange={(e) => upd(setRoles, i, { gpt: e.target.value })} />
+                <input className="glass-input font-mono text-[11px]" placeholder="SoVITS .pth" value={r.sovits} onChange={(e) => upd(setRoles, i, { sovits: e.target.value })} />
+              </>
+            )}
             <input className="glass-input" placeholder="别名,…" value={r.aliases} onChange={(e) => upd(setRoles, i, { aliases: e.target.value })} />
             <DelBtn onClick={() => setRoles((rs) => rs.filter((_, k) => k !== i))} />
           </div>
@@ -161,15 +205,21 @@ export function SettingsModal() {
       {/* 语音指令 */}
       <Section
         title="语音指令 → 参考音频 / 语气"
-        hint="语气是显示用的可读标签（把指令编号映射为语气）"
-        onAdd={() => setCmds((c) => [...c, { cmd: '', ref: '', prompt: '', tone: '' }])}
+        hint={isEmbedded ? '语气=可读标签；归属角色=该参考音频属于哪个角色组' : '语气 = 把指令编号映射为可读语气'}
+        onAdd={() => setCmds((c) => [...c, { cmd: '', ref: '', prompt: '', tone: '', role: '' }])}
       >
         {cmds.map((c, i) => (
-          <div key={i} className="mb-1.5 grid grid-cols-[120px_1fr_1fr_110px_28px] gap-1.5">
+          <div
+            key={i}
+            className={`mb-1.5 grid gap-1.5 ${isEmbedded ? 'grid-cols-[110px_1fr_1fr_90px_100px_28px]' : 'grid-cols-[110px_1fr_1fr_100px_28px]'}`}
+          >
             <input className="glass-input" placeholder="指令名" value={c.cmd} onChange={(e) => upd(setCmds, i, { cmd: e.target.value })} />
             <input className="glass-input font-mono text-[11px]" placeholder="参考音频" value={c.ref} onChange={(e) => upd(setCmds, i, { ref: e.target.value })} />
             <input className="glass-input" placeholder="参考文本" value={c.prompt} onChange={(e) => upd(setCmds, i, { prompt: e.target.value })} />
             <input className="glass-input" placeholder="语气" value={c.tone} onChange={(e) => upd(setCmds, i, { tone: e.target.value })} />
+            {isEmbedded && (
+              <input className="glass-input" placeholder="归属角色" value={c.role} onChange={(e) => upd(setCmds, i, { role: e.target.value })} />
+            )}
             <DelBtn onClick={() => setCmds((cs) => cs.filter((_, k) => k !== i))} />
           </div>
         ))}
@@ -180,6 +230,20 @@ export function SettingsModal() {
 
 function upd<T>(setter: (fn: (prev: T[]) => T[]) => void, i: number, patch: Partial<T>) {
   setter((prev) => prev.map((row, k) => (k === i ? { ...row, ...patch } : row)))
+}
+
+function ModeBtn(props: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={props.onClick}
+      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
+        props.active ? 'bg-white text-app-text shadow-sm dark:bg-zinc-700' : 'text-app-muted hover:text-app-text'
+      }`}
+    >
+      {props.icon}
+      {props.children}
+    </button>
+  )
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

@@ -3,7 +3,7 @@ import { join, normalize, dirname } from 'node:path'
 import { writeFile, mkdir, copyFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { loadTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
+import { resolveTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
 import { validateFormat } from './format'
 import {
@@ -19,6 +19,7 @@ import {
   diffWorkbooks,
   parseLegacyTtsConfig,
   serializeTtsConfig,
+  BUILTIN_PRESETS,
   runPipeline,
   writeRpyFiles,
   type CellEdit,
@@ -298,11 +299,14 @@ function registerIpc(): void {
 
   ipcMain.handle('tts:loadConfig', async (_e, path: string): Promise<TtsConfigResult> => {
     try {
-      return { ok: true, config: await loadTtsConfig(path) }
+      return { ok: true, config: await resolveTtsConfig(path) }
     } catch (e) {
       return { ok: false, error: errMsg(e) }
     }
   })
+  ipcMain.handle('tts:builtins', (): { id: string; name: string }[] =>
+    BUILTIN_PRESETS.map((p) => ({ id: p.id, name: p.name })),
+  )
   ipcMain.handle('tts:health', (_e, baseUrl: string): Promise<TtsHealth> => ttsHealth(baseUrl))
   ipcMain.handle('tts:engineStart', (e): Promise<EngineStartResult> =>
     engineStart((line) => e.sender.send('tts:engineLog', line)),
@@ -311,7 +315,7 @@ function registerIpc(): void {
   ipcMain.handle('tts:engineStatus', (): EngineStatus => engineStatus())
   ipcMain.handle('tts:jobs', async (_e, args: TtsJobsArgs): Promise<TtsJobsResult> => {
     try {
-      const cfg = args.configPath ? await loadTtsConfig(args.configPath) : parseLegacyTtsConfig({})
+      const cfg = args.configPath ? await resolveTtsConfig(args.configPath) : parseLegacyTtsConfig({})
       const audioDir = audioDirFor(args.xlsxPath)
       const jobs = await enrichedJobs(args.xlsxPath, args.useVoiceText, cfg, args.textLang, audioDir)
       return { ok: true, jobs, audioDir }
@@ -321,7 +325,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('tts:synthesize', async (e, args: TtsSynthArgs): Promise<TtsSynthSummary> => {
     try {
-      const cfg = await loadTtsConfig(args.configPath)
+      const cfg = await resolveTtsConfig(args.configPath)
       let jobs = await planJobs(args.xlsxPath, args.useVoiceText)
       if (args.only) {
         const set = new Set(args.only)

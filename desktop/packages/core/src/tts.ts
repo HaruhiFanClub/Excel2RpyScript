@@ -54,6 +54,11 @@ export function planTtsJobs(sheets: ParsedSheet[], opts: PlanTtsOptions): TtsJob
 }
 
 // ---- 配置（config.json 预设） ----
+// 两种服务模式：
+//  remote   远端服务：API 调用服务器，按角色切自定义模型（role_model_mapping）。凉宫春日内置预设属此。
+//  embedded 内嵌服务：本地引擎 zero-shot 推理，角色只是给参考音频分组（不切模型）。
+export type ServiceMode = 'remote' | 'embedded'
+
 export interface RoleModel {
   gpt: string
   sovits: string
@@ -63,8 +68,10 @@ export interface VoiceCmd {
   refAudioPath: string
   promptText: string
   tone?: string // 语气（显示用，把语音指令编号映射为可读语气）
+  role?: string // 归属角色（embedded 模式下用于把参考音频分组到角色）
 }
 export interface TtsConfig {
+  serviceMode: ServiceMode
   apiBaseUrl: string
   roleModelMapping: Record<string, RoleModel>
   voiceCmdMapping: Record<string, VoiceCmd>
@@ -82,7 +89,7 @@ export function parseLegacyTtsConfig(json: unknown): TtsConfig {
   >
   const cmdSrc = (j['voice_cmd_mapping'] ?? {}) as Record<
     string,
-    { ref_audio_path?: string; prompt_text?: string; tone?: string }
+    { ref_audio_path?: string; prompt_text?: string; tone?: string; role?: string }
   >
   const roleModelMapping: Record<string, RoleModel> = {}
   for (const [k, v] of Object.entries(roleSrc))
@@ -97,9 +104,12 @@ export function parseLegacyTtsConfig(json: unknown): TtsConfig {
       refAudioPath: v.ref_audio_path ?? '',
       promptText: v.prompt_text ?? '',
       ...(v.tone ? { tone: v.tone } : {}),
+      ...(v.role ? { role: v.role } : {}),
     }
   const api = (j['API_BASE_URL'] ?? {}) as { base?: string }
+  const sm = j['service_mode']
   return {
+    serviceMode: sm === 'embedded' ? 'embedded' : 'remote',
     apiBaseUrl: api.base ?? 'http://127.0.0.1:9880/',
     roleModelMapping,
     voiceCmdMapping,
@@ -132,10 +142,19 @@ export function serializeTtsConfig(cfg: TtsConfig): unknown {
   const role: Record<string, { gpt: string; sovits: string; aliases?: string[] }> = {}
   for (const [k, v] of Object.entries(cfg.roleModelMapping))
     role[k] = { gpt: v.gpt, sovits: v.sovits, ...(v.aliases?.length ? { aliases: v.aliases } : {}) }
-  const cmd: Record<string, { ref_audio_path: string; prompt_text: string; tone?: string }> = {}
+  const cmd: Record<
+    string,
+    { ref_audio_path: string; prompt_text: string; tone?: string; role?: string }
+  > = {}
   for (const [k, v] of Object.entries(cfg.voiceCmdMapping))
-    cmd[k] = { ref_audio_path: v.refAudioPath, prompt_text: v.promptText, ...(v.tone ? { tone: v.tone } : {}) }
+    cmd[k] = {
+      ref_audio_path: v.refAudioPath,
+      prompt_text: v.promptText,
+      ...(v.tone ? { tone: v.tone } : {}),
+      ...(v.role ? { role: v.role } : {}),
+    }
   return {
+    service_mode: cfg.serviceMode,
     role_model_mapping: role,
     voice_cmd_mapping: cmd,
     default_prompt_audio: cfg.defaultPromptAudio,

@@ -61,6 +61,15 @@ const SPRITE_SUB: { field: string; header: string }[] = [
 ]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
 
+// 第一列角色名 → 角色 key（直配或别名）
+function resolveRoleKey(cfg: TtsConfig, name: string): string {
+  if (cfg.roleModelMapping[name]) return name
+  for (const [k, v] of Object.entries(cfg.roleModelMapping)) {
+    if (v.aliases?.includes(name)) return k
+  }
+  return name
+}
+
 export default function TablePage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const assets = useWorkspaceStore((s) => s.assets)
@@ -145,10 +154,6 @@ export default function TablePage() {
     [assets, ttsConfig, setAssets],
   )
 
-  const cmdValues = useMemo(
-    () => (ttsConfig ? Object.keys(ttsConfig.voiceCmdMapping) : []),
-    [ttsConfig],
-  )
 
   const columnDefs = useMemo<ColDef<Row>[]>(() => {
     const defs: ColDef<Row>[] = [
@@ -167,6 +172,14 @@ export default function TablePage() {
           })
         }
       } else if (c.key === 'voice_cmd') {
+        const allCmds = ttsConfig ? Object.keys(ttsConfig.voiceCmdMapping) : []
+        // 内嵌模式按行角色过滤语音指令（参考音频按角色分组）；远端模式给全部
+        const valuesForRow = (rowData: Row): string[] => {
+          if (!ttsConfig || ttsConfig.serviceMode !== 'embedded') return allCmds
+          const roleKey = resolveRoleKey(ttsConfig, String(rowData['role_name'] ?? ''))
+          const grouped = allCmds.filter((k) => ttsConfig.voiceCmdMapping[k]?.role === roleKey)
+          return grouped.length ? grouped : allCmds
+        }
         defs.push({
           headerName: c.header,
           field: c.key,
@@ -174,8 +187,11 @@ export default function TablePage() {
           editable: true,
           tooltipField: c.key,
           cellRenderer: VoiceCmdCell,
-          ...(cmdValues.length
-            ? { cellEditor: 'agSelectCellEditor', cellEditorParams: { values: cmdValues } }
+          ...(allCmds.length
+            ? {
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: (p: { data?: Row }) => ({ values: valuesForRow(p.data ?? {}) }),
+              }
             : {}),
         })
       } else {
@@ -192,7 +208,7 @@ export default function TablePage() {
       }
     }
     return defs
-  }, [cmdValues])
+  }, [ttsConfig])
 
   const defaultColDef = useMemo<ColDef<Row>>(() => ({ resizable: true, sortable: true }), [])
   const rowData = useMemo<Row[]>(

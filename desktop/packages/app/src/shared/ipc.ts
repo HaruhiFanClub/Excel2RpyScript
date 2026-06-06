@@ -155,6 +155,7 @@ export interface E2rApi {
   importAsset(category: 'image' | 'audio', name: string): Promise<ProjectResult>
   ttsLoadConfig(path: string): Promise<TtsConfigResult>
   ttsSaveConfig(path: string, config: TtsConfig): Promise<SaveResult>
+  ttsBuiltins(): Promise<{ id: string; name: string }[]>
   ttsHealth(baseUrl: string): Promise<TtsHealth>
   ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
   ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>

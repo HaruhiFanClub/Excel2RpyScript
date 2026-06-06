@@ -37,6 +37,11 @@ export default function TtsPage() {
   const [health, setHealth] = useState<{ ok: boolean; device?: string; error?: string } | null>(null)
   const [managedUrl, setManagedUrl] = useState<string | null>(null)
   const [engineStarting, setEngineStarting] = useState(false)
+  const [builtins, setBuiltins] = useState<{ id: string; name: string }[]>([])
+
+  useEffect(() => {
+    void window.e2r.ttsBuiltins().then(setBuiltins)
+  }, [])
   const [textLang, setTextLang] = useState('auto')
   const [promptLang, setPromptLang] = useState('auto')
   const [useVoiceText, setUseVoiceText] = useState(false)
@@ -55,7 +60,12 @@ export default function TtsPage() {
     window.e2r.ttsLoadConfig(ttsConfigPath).then((r) => {
       if (r.ok) {
         setConfig(r.config)
-        window.e2r.ttsHealth(r.config.apiBaseUrl).then(setHealth)
+        setManagedUrl(null)
+        if (r.config.serviceMode === 'remote') {
+          void window.e2r.ttsHealth(r.config.apiBaseUrl).then(setHealth)
+        } else {
+          setHealth(null) // 内嵌：启动引擎后再检测
+        }
       } else setError(r.error)
     })
   }, [ttsConfigPath])
@@ -161,25 +171,52 @@ export default function TtsPage() {
 
       {/* 配置条 */}
       <section className="glass-card mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-[12px]">
-        <button
-          type="button"
-          onClick={pickConfig}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 font-medium text-app-text hover:bg-white/70 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
-        >
-          <Settings2 size={13} /> {ttsConfigPath ? '更换预设' : '选择 TTS 预设 (config.json)'}
-        </button>
-        <button
-          type="button"
-          onClick={startEngine}
-          disabled={engineStarting || !!managedUrl}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 font-medium text-app-text hover:bg-white/70 disabled:opacity-60 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
-        >
-          {engineStarting ? <span className="spinner" /> : <Wand2 size={13} />}
-          {managedUrl ? '内置引擎已启动' : engineStarting ? '启动中…' : '启动内置引擎'}
-        </button>
+        <span className="flex items-center gap-1.5">
+          <Settings2 size={13} className="text-app-muted" />
+          <select
+            value={ttsConfigPath.startsWith('builtin:') ? ttsConfigPath : ttsConfigPath ? '__file__' : ''}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === '__file__') void pickConfig()
+              else setTtsConfigPath(v)
+            }}
+            className="rounded-md border border-app-border bg-white/50 px-2 py-1 text-[12px] text-app-text dark:bg-zinc-800/50"
+          >
+            <option value="" disabled>
+              选择预设…
+            </option>
+            {builtins.map((b) => (
+              <option key={b.id} value={`builtin:${b.id}`}>
+                {b.name}
+              </option>
+            ))}
+            <option value="__file__">从文件…（config.json）</option>
+          </select>
+          {ttsConfigPath && !ttsConfigPath.startsWith('builtin:') && (
+            <span className="max-w-[160px] truncate font-mono text-app-muted" title={ttsConfigPath}>
+              {ttsConfigPath.split('/').pop()}
+            </span>
+          )}
+        </span>
+
         {config && (
           <>
-            <span className="font-mono text-app-muted">{config.apiBaseUrl}</span>
+            <span className="rounded-full bg-sky-400/12 px-2 py-0.5 text-sky-600 dark:text-sky-300">
+              {config.serviceMode === 'embedded' ? '内嵌 zero-shot' : '远端服务'}
+            </span>
+            {config.serviceMode === 'embedded' ? (
+              <button
+                type="button"
+                onClick={startEngine}
+                disabled={engineStarting || !!managedUrl}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 font-medium text-app-text hover:bg-white/70 disabled:opacity-60 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+              >
+                {engineStarting ? <span className="spinner" /> : <Wand2 size={13} />}
+                {managedUrl ? '内置引擎已启动' : engineStarting ? '启动中…' : '启动内置引擎'}
+              </button>
+            ) : (
+              <span className="font-mono text-app-muted">{config.apiBaseUrl}</span>
+            )}
             {health && (
               <span
                 className={`flex items-center gap-1 rounded-full px-2 py-0.5 ${
@@ -192,7 +229,10 @@ export default function TtsPage() {
                 {health.ok ? `引擎在线${health.device ? ` · ${health.device}` : ''}` : '引擎离线'}
               </span>
             )}
-            <span className="text-app-muted">角色 {Object.keys(config.roleModelMapping).length} · 指令 {Object.keys(config.voiceCmdMapping).length}</span>
+            <span className="text-app-muted">
+              角色 {Object.keys(config.roleModelMapping).length} · 指令{' '}
+              {Object.keys(config.voiceCmdMapping).length}
+            </span>
           </>
         )}
         <span className="ml-auto flex items-center gap-2">
