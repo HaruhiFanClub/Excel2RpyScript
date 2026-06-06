@@ -6,6 +6,7 @@ import {
   planTtsJobs,
   parseLegacyTtsConfig,
   ttsJobSignature,
+  toneFor,
   type TtsConfig,
   type TtsJob,
   type EnrichedJob,
@@ -37,7 +38,7 @@ export async function enrichedJobs(
   const existing = new Set(await listSynthesized(audioDir))
   const manifest = await readManifest(audioDir)
   return jobs.map((j) => {
-    const tone = cfg.voiceCmdMapping[j.voiceCmd]?.tone ?? j.voiceCmd
+    const tone = toneFor(cfg, j.voiceCmd)
     const sig = ttsJobSignature(j, cfg, textLang)
     const status: EnrichedJob['status'] = !existing.has(j.outputName)
       ? 'missing'

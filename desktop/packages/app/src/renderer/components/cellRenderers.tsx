@@ -8,10 +8,12 @@ import {
   COLOR_WORDS,
   type AssetMaps,
 } from '@e2r/core/assets'
+import { toneFor, type TtsConfig } from '@e2r/core/tts'
 import { assetUrl } from '../lib/asset'
 
 export interface GridContext {
   assets: AssetMaps | null
+  ttsConfig: TtsConfig | null
   onImage: (url: string, title: string) => void
   onAudio: (url: string, title: string) => void
 }
@@ -79,6 +81,24 @@ export function SpriteSlotCell(p: CustomCellRendererProps) {
           </span>
         )
       })}
+    </div>
+  )
+}
+
+// 语音指令：显示 指令 + 语气（关联 TTS 配置时）
+export function VoiceCmdCell(p: CustomCellRendererProps) {
+  const ctx = ctxOf(p)
+  const raw = String(p.value ?? '').trim()
+  if (!raw) return null
+  const tone = ctx.ttsConfig ? toneFor(ctx.ttsConfig, raw) : ''
+  return (
+    <div className="flex h-full items-center gap-1.5 overflow-hidden">
+      <span className="truncate">{raw}</span>
+      {tone && tone !== raw && (
+        <span className="shrink-0 rounded bg-sky-400/12 px-1.5 py-0.5 text-[11px] text-sky-600 dark:text-sky-300">
+          {tone}
+        </span>
+      )}
     </div>
   )
 }

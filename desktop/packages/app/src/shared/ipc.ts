@@ -141,4 +141,6 @@ export interface E2rApi {
   demoPage: string | null
   /** 开发用：通过 E2R_PROJECT 自动关联工程 */
   demoProject: string | null
+  /** 开发用：通过 E2R_TTSCONFIG 预置 TTS 配置 */
+  demoTtsConfig: string | null
 }

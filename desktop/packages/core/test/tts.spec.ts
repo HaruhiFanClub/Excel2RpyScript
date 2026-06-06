@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { planTtsJobs, parseLegacyTtsConfig, ttsJobSignature, serializeTtsConfig } from '../src/tts'
+import {
+  planTtsJobs,
+  parseLegacyTtsConfig,
+  ttsJobSignature,
+  serializeTtsConfig,
+  deriveTone,
+} from '../src/tts'
 import { runPipeline, type ParsedSheet } from '../src/index'
 import { EMPTY, textCell, type CellValue } from '../src/parse/cellValue'
 import { ElementColNumMapping, type ColKey } from '../src/settings/converterSetting'
@@ -62,6 +68,13 @@ describe('parseLegacyTtsConfig / 签名', () => {
     expect(cfg.apiBaseUrl).toBe('http://x:9880/')
     expect(cfg.roleModelMapping['阿虚']).toEqual({ gpt: 'g.ckpt', sovits: 's.pth' })
     expect(cfg.voiceCmdMapping['kyon_1']).toMatchObject({ refAudioPath: 'r.wav', promptText: 'p' })
+  })
+
+  it('deriveTone 从参考音频文件名推导语气', () => {
+    expect(deriveTone('./predef_ref/正常有希/01_有希_平静.wav')).toBe('平静')
+    expect(deriveTone('./predef_ref/凉宫春日/01_凉宫春日_不甘心_遗憾.wav')).toBe('不甘心 遗憾')
+    expect(deriveTone('02_有希_平静_温柔.wav')).toBe('平静 温柔')
+    expect(deriveTone('')).toBe('')
   })
 
   it('parse ↔ serialize 往返（含 aliases / tone）', () => {

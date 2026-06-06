@@ -12,9 +12,16 @@ import {
 import { FileSpreadsheet, TableProperties, Save, RotateCcw, X } from 'lucide-react'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
+import type { TtsConfig } from '@e2r/core/tts'
 import type { CellEdit } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
-import { SpriteSlotCell, BgCell, AudioCell, type GridContext } from '../components/cellRenderers'
+import {
+  SpriteSlotCell,
+  BgCell,
+  AudioCell,
+  VoiceCmdCell,
+  type GridContext,
+} from '../components/cellRenderers'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -56,6 +63,8 @@ const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${
 export default function TablePage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const assets = useWorkspaceStore((s) => s.assets)
+  const ttsConfigPath = useWorkspaceStore((s) => s.ttsConfigPath)
+  const [ttsConfig, setTtsConfig] = useState<TtsConfig | null>(null)
 
   const [data, setData] = useState<TableData | null>(null)
   const [active, setActive] = useState(0)
@@ -96,20 +105,35 @@ export default function TablePage() {
     }
   }, [workbookPath, reloadKey])
 
-  // 关联工程后刷新单元格（重新解析缩略图/音频）
+  // 载入 TTS 配置（用于语音指令下拉与语气显示）
+  useEffect(() => {
+    if (!ttsConfigPath) {
+      setTtsConfig(null)
+      return
+    }
+    window.e2r.ttsLoadConfig(ttsConfigPath).then((r) => setTtsConfig(r.ok ? r.config : null))
+  }, [ttsConfigPath])
+
+  // 关联工程 / 配置变化后刷新单元格
   useEffect(() => {
     gridApi.current?.refreshCells({ force: true })
-  }, [assets])
+  }, [assets, ttsConfig])
 
   const sheet = data?.sheets[active]
 
   const context = useMemo<GridContext>(
     () => ({
       assets: assets ? { images: assets.images, audio: assets.audio } : null,
+      ttsConfig,
       onImage: (url, title) => setImg({ url, title }),
       onAudio: (url, title) => setAudio({ url, title }),
     }),
-    [assets],
+    [assets, ttsConfig],
+  )
+
+  const cmdValues = useMemo(
+    () => (ttsConfig ? Object.keys(ttsConfig.voiceCmdMapping) : []),
+    [ttsConfig],
   )
 
   const columnDefs = useMemo<ColDef<Row>[]>(() => {
@@ -128,6 +152,18 @@ export default function TablePage() {
             cellRenderer: SpriteSlotCell,
           })
         }
+      } else if (c.key === 'voice_cmd') {
+        defs.push({
+          headerName: c.header,
+          field: c.key,
+          width: c.width,
+          editable: true,
+          tooltipField: c.key,
+          cellRenderer: VoiceCmdCell,
+          ...(cmdValues.length
+            ? { cellEditor: 'agSelectCellEditor', cellEditorParams: { values: cmdValues } }
+            : {}),
+        })
       } else {
         defs.push({
           headerName: c.header,
@@ -141,7 +177,7 @@ export default function TablePage() {
       }
     }
     return defs
-  }, [])
+  }, [cmdValues])
 
   const defaultColDef = useMemo<ColDef<Row>>(() => ({ resizable: true, sortable: true }), [])
   const rowData = useMemo<Row[]>(

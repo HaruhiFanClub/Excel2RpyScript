@@ -109,6 +109,24 @@ export function parseLegacyTtsConfig(json: unknown): TtsConfig {
   }
 }
 
+// 从参考音频文件名推导可读语气：形如 NN_角色_语气[_语气2].wav → "语气 语气2"
+export function deriveTone(refAudioPath: string): string {
+  if (!refAudioPath) return ''
+  const file = refAudioPath.split(/[\\/]/).pop() ?? ''
+  const stem = file.replace(/\.[^.]+$/, '')
+  let parts = stem.split('_').filter(Boolean)
+  if (parts.length && /^\d+$/.test(parts[0]!)) parts = parts.slice(1) // 去前导编号
+  if (parts.length > 1) parts = parts.slice(1) // 去角色段
+  return parts.join(' ')
+}
+
+// 取语音指令的显示语气：显式 tone > 文件名推导 > 指令名
+export function toneFor(cfg: TtsConfig, voiceCmd: string): string {
+  const c = cfg.voiceCmdMapping[voiceCmd]
+  if (!c) return voiceCmd
+  return c.tone || deriveTone(c.refAudioPath) || voiceCmd
+}
+
 // 序列化为旧 config.json 结构（与旧工具/预设兼容）
 export function serializeTtsConfig(cfg: TtsConfig): unknown {
   const role: Record<string, { gpt: string; sovits: string; aliases?: string[] }> = {}

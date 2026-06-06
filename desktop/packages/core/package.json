@@ -11,7 +11,8 @@
     "./table": "./src/tableColumns.ts",
     "./settings": "./src/settings/converterSetting.ts",
     "./assets": "./src/assets.ts",
-    "./sprites": "./src/sprites.ts"
+    "./sprites": "./src/sprites.ts",
+    "./tts": "./src/tts.ts"
   },
   "scripts": {
     "test": "vitest run",

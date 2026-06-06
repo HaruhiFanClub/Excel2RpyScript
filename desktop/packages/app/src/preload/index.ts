@@ -29,6 +29,7 @@ import type {
 const demoArg = process.argv.find((a) => a.startsWith('--e2r-demo='))
 const pageArg = process.argv.find((a) => a.startsWith('--e2r-page='))
 const projArg = process.argv.find((a) => a.startsWith('--e2r-project='))
+const ttsCfgArg = process.argv.find((a) => a.startsWith('--e2r-ttsconfig='))
 
 const api: E2rApi = {
   openXlsx: () => ipcRenderer.invoke('dialog:openXlsx'),
@@ -78,6 +79,7 @@ const api: E2rApi = {
   demoFile: demoArg ? demoArg.slice('--e2r-demo='.length) : null,
   demoPage: pageArg ? pageArg.slice('--e2r-page='.length) : null,
   demoProject: projArg ? projArg.slice('--e2r-project='.length) : null,
+  demoTtsConfig: ttsCfgArg ? ttsCfgArg.slice('--e2r-ttsconfig='.length) : null,
 }
 
 contextBridge.exposeInMainWorld('e2r', api)

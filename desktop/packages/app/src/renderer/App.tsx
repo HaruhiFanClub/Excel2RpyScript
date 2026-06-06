@@ -16,13 +16,15 @@ export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
   const [page, setPage] = useState<PageId>(initial && PAGES.includes(initial) ? initial : 'convert')
 
-  // 开发钩子：E2R_DEMO 预置工作簿、E2R_PROJECT 自动关联工程
+  // 开发钩子：E2R_DEMO 预置工作簿、E2R_PROJECT 自动关联工程、E2R_TTSCONFIG 预置配置
   const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
   const linkProject = useWorkspaceStore((s) => s.linkProject)
+  const setTtsConfigPath = useWorkspaceStore((s) => s.setTtsConfigPath)
   useEffect(() => {
     if (window.e2r.demoFile) setWorkbookPath(window.e2r.demoFile)
     if (window.e2r.demoProject) void linkProject(window.e2r.demoProject)
-  }, [setWorkbookPath, linkProject])
+    if (window.e2r.demoTtsConfig) setTtsConfigPath(window.e2r.demoTtsConfig)
+  }, [setWorkbookPath, linkProject, setTtsConfigPath])
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-app-bg text-app-text">

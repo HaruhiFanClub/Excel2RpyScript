@@ -74,6 +74,7 @@ function createWindow(): void {
         ...(process.env['E2R_DEMO'] ? [`--e2r-demo=${process.env['E2R_DEMO']}`] : []),
         ...(process.env['E2R_PAGE'] ? [`--e2r-page=${process.env['E2R_PAGE']}`] : []),
         ...(process.env['E2R_PROJECT'] ? [`--e2r-project=${process.env['E2R_PROJECT']}`] : []),
+        ...(process.env['E2R_TTSCONFIG'] ? [`--e2r-ttsconfig=${process.env['E2R_TTSCONFIG']}`] : []),
       ],
     },
   })
