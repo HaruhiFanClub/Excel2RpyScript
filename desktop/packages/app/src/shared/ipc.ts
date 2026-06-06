@@ -10,9 +10,10 @@ import type {
   TtsConfig,
   TtsJob,
   EnrichedJob,
+  FormatResult,
 } from '@e2r/core'
 
-export type { CellEdit, CheckIssue, AssetIndex, DiffReport, TtsConfig, TtsJob, EnrichedJob }
+export type { CellEdit, CheckIssue, AssetIndex, DiffReport, TtsConfig, TtsJob, EnrichedJob, FormatResult }
 
 export type TtsConfigResult = { ok: true; config: TtsConfig } | { ok: false; error: string }
 export interface TtsHealth {
@@ -115,6 +116,7 @@ export interface E2rApi {
   openJson(): Promise<string | null>
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
+  validateFormat(xlsxPath: string): Promise<FormatResult>
   readTable(xlsxPath: string): Promise<TableResult>
   saveTable(xlsxPath: string, edits: CellEdit[]): Promise<SaveResult>
   check(xlsxPath: string): Promise<CheckResult>

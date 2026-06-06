@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { loadTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
+import { validateFormat } from './format'
 import {
   readTable,
   saveTableEdits,
@@ -40,6 +41,7 @@ import type {
   DeployResult,
   EngineStartResult,
   EngineStatus,
+  FormatResult,
 } from '../shared/ipc'
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -113,6 +115,9 @@ function registerIpc(): void {
   )
   ipcMain.handle('convert', (_e, args: ConvertArgs): Promise<ConvertResult> =>
     convertWorkbook(args),
+  )
+  ipcMain.handle('format:validate', (_e, xlsxPath: string): Promise<FormatResult> =>
+    validateFormat(xlsxPath),
   )
   ipcMain.handle('table:read', async (_e, xlsxPath: string): Promise<TableResult> => {
     try {

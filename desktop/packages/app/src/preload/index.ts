@@ -7,6 +7,7 @@ import type {
   DiffResult,
   EngineStartResult,
   EngineStatus,
+  FormatResult,
   ConvertArgs,
   ConvertResult,
   E2rApi,
@@ -34,6 +35,8 @@ const api: E2rApi = {
   openJson: () => ipcRenderer.invoke('dialog:openJson'),
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
+  validateFormat: (xlsxPath: string): Promise<FormatResult> =>
+    ipcRenderer.invoke('format:validate', xlsxPath),
   readTable: (xlsxPath: string): Promise<TableResult> => ipcRenderer.invoke('table:read', xlsxPath),
   saveTable: (xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> =>
     ipcRenderer.invoke('table:save', xlsxPath, edits),

@@ -1,5 +1,5 @@
-import { useCallback } from 'react'
-import { Link2, Link2Off } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Link2, Link2Off, TriangleAlert } from 'lucide-react'
 import { PathPicker } from './PathPicker'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 
@@ -18,8 +18,25 @@ export function WorkspaceBar() {
 
   const count = assets ? Object.keys(assets.images).length + Object.keys(assets.audio).length : 0
 
+  // 导入即校验格式，非法直接提示
+  const [problems, setProblems] = useState<string[]>([])
+  useEffect(() => {
+    if (!workbookPath) {
+      setProblems([])
+      return
+    }
+    let cancelled = false
+    window.e2r.validateFormat(workbookPath).then((r) => {
+      if (!cancelled) setProblems(r.valid ? [] : r.problems)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workbookPath])
+
   return (
-    <div className="flex shrink-0 items-center gap-2.5 border-b border-app-border px-6 py-2.5">
+    <div className="shrink-0 border-b border-app-border">
+    <div className="flex items-center gap-2.5 px-6 py-2.5">
       <span className="text-[11px] font-medium uppercase tracking-wide text-app-muted">工作簿</span>
       <div className="min-w-0 max-w-[560px] flex-1">
         <PathPicker
@@ -49,6 +66,15 @@ export function WorkspaceBar() {
           <Link2 size={14} /> 关联 Ren&apos;Py 工程
         </button>
       )}
+    </div>
+    {problems.length > 0 && (
+      <div className="flex items-start gap-2 bg-rose-500/10 px-6 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+        <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+        <span>
+          表格格式可能不符合模板：{problems.join('；')}
+        </span>
+      </div>
+    )}
     </div>
   )
 }

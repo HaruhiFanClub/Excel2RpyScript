@@ -22,6 +22,12 @@ export interface PlanTtsOptions {
   useVoiceText: boolean // true → 用「选填语音文本」(col18)，否则用台词(col1)
 }
 
+// 带 UI 状态的任务：tone=语气，status=未生成/已生成/已生成但输入已改
+export interface EnrichedJob extends TtsJob {
+  tone: string
+  status: 'missing' | 'generated' | 'stale'
+}
+
 // 仅对 语音列(col23)=tts（不分大小写）的行规划合成任务，角色名前向填充。
 export function planTtsJobs(sheets: ParsedSheet[], opts: PlanTtsOptions): TtsJob[] {
   const jobs: TtsJob[] = []
