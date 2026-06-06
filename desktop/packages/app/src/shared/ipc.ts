@@ -1,9 +1,18 @@
 // IPC 契约类型（main / preload / renderer 共享）
-import type { ConversionMode, ConvertWarning, TableData, CellEdit } from '@e2r/core'
+import type { ConversionMode, ConvertWarning, TableData, CellEdit, CheckIssue } from '@e2r/core'
 
-export type { CellEdit }
+export type { CellEdit, CheckIssue }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
 export type SaveResult = { ok: true } | { ok: false; error: string }
+
+export interface CheckSummary {
+  error: number
+  warn: number
+  info: number
+}
+export type CheckResult =
+  | { ok: true; issues: CheckIssue[]; summary: CheckSummary }
+  | { ok: false; error: string }
 
 export interface PreviewArgs {
   xlsxPath: string
@@ -39,6 +48,7 @@ export interface E2rApi {
   convert(args: ConvertArgs): Promise<ConvertResult>
   readTable(xlsxPath: string): Promise<TableResult>
   saveTable(xlsxPath: string, edits: CellEdit[]): Promise<SaveResult>
+  check(xlsxPath: string): Promise<CheckResult>
   pathForFile(file: File): string
   /** 开发用：通过 E2R_DEMO 自动载入一个表格（自动化截图/验证） */
   demoFile: string | null

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AudioLines, ClipboardCheck, FolderKanban } from 'lucide-react'
+import { AudioLines, FolderKanban } from 'lucide-react'
 import { Sidebar, type PageId } from './components/Sidebar'
 import { PlaceholderView } from './components/PlaceholderView'
 import ConvertPage from './pages/ConvertPage'
 import TablePage from './pages/TablePage'
+import CheckPage from './pages/CheckPage'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 
 const PAGES: PageId[] = ['convert', 'table', 'tts', 'check', 'project']
@@ -60,13 +61,7 @@ export function App(): JSX.Element {
                       desc="内置 GPT-SoVITS · 批量/单句合成 · 试听 · 语气映射"
                     />
                   )}
-                  {page === 'check' && (
-                    <PlaceholderView
-                      icon={ClipboardCheck}
-                      title="检查 / Diff"
-                      desc="按填写规范找出 error/warn，并对新旧表生成差异报告"
-                    />
-                  )}
+                  {page === 'check' && <CheckPage />}
                   {page === 'project' && (
                     <PlaceholderView
                       icon={FolderKanban}

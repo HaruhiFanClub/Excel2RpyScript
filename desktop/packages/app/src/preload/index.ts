@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   CellEdit,
+  CheckResult,
   ConvertArgs,
   ConvertResult,
   E2rApi,
@@ -21,6 +22,7 @@ const api: E2rApi = {
   readTable: (xlsxPath: string): Promise<TableResult> => ipcRenderer.invoke('table:read', xlsxPath),
   saveTable: (xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> =>
     ipcRenderer.invoke('table:save', xlsxPath, edits),
+  check: (xlsxPath: string): Promise<CheckResult> => ipcRenderer.invoke('check', xlsxPath),
   pathForFile: (file: File): string => {
     try {
       return webUtils.getPathForFile(file)

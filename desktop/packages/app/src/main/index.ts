@@ -1,6 +1,13 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'node:path'
-import { readTable, saveTableEdits, type CellEdit } from '@e2r/core'
+import {
+  readTable,
+  saveTableEdits,
+  readWorkbook,
+  checkSheets,
+  summarize,
+  type CellEdit,
+} from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
 import type {
   ConvertArgs,
@@ -9,6 +16,7 @@ import type {
   PreviewResult,
   TableResult,
   SaveResult,
+  CheckResult,
 } from '../shared/ipc'
 
 function createWindow(): void {
@@ -84,6 +92,15 @@ function registerIpc(): void {
       }
     },
   )
+  ipcMain.handle('check', async (_e, xlsxPath: string): Promise<CheckResult> => {
+    try {
+      const { sheets } = await readWorkbook(xlsxPath)
+      const issues = checkSheets(sheets)
+      return { ok: true, issues, summary: summarize(issues) }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 }
 
 void app.whenReady().then(() => {
