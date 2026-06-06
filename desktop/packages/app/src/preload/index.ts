@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  CellEdit,
   ConvertArgs,
   ConvertResult,
   E2rApi,
   PreviewArgs,
   PreviewResult,
+  SaveResult,
   TableResult,
 } from '../shared/ipc'
 
@@ -17,6 +19,8 @@ const api: E2rApi = {
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
   readTable: (xlsxPath: string): Promise<TableResult> => ipcRenderer.invoke('table:read', xlsxPath),
+  saveTable: (xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> =>
+    ipcRenderer.invoke('table:save', xlsxPath, edits),
   pathForFile: (file: File): string => {
     try {
       return webUtils.getPathForFile(file)
