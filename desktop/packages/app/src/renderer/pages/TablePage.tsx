@@ -73,6 +73,7 @@ export default function TablePage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [query, setQuery] = useState('')
 
   const [img, setImg] = useState<{ url: string; title: string } | null>(null)
   const [audio, setAudio] = useState<{ url: string; title: string } | null>(null)
@@ -180,6 +181,7 @@ export default function TablePage() {
           width: c.width,
           editable: true,
           tooltipField: c.key,
+          ...(c.key === 'role_name' ? { pinned: 'left' as const } : {}),
           ...(RENDERERS[c.key] ? { cellRenderer: RENDERERS[c.key] } : {}),
           ...(LARGE_TEXT.has(c.key) ? { cellEditor: 'agLargeTextCellEditor', cellEditorPopup: true } : {}),
         })
@@ -298,6 +300,12 @@ export default function TablePage() {
 
       {data && data.sheets.length > 0 && (
         <div className="mb-3 flex items-center gap-1 overflow-x-auto">
+          <input
+            className="glass-input mr-2 w-48 shrink-0 text-[12px]"
+            placeholder="搜索本表…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
           {data.sheets.map((s, i) => (
             <button
               key={s.name}
@@ -326,6 +334,7 @@ export default function TablePage() {
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
               rowData={rowData}
+              quickFilterText={query}
               onGridReady={onGridReady}
               onCellValueChanged={onCellValueChanged}
               tooltipShowDelay={300}
