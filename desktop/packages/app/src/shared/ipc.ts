@@ -1,7 +1,15 @@
 // IPC 契约类型（main / preload / renderer 共享）
-import type { ConversionMode, ConvertWarning, TableData, CellEdit, CheckIssue } from '@e2r/core'
+import type {
+  ConversionMode,
+  ConvertWarning,
+  TableData,
+  CellEdit,
+  CheckIssue,
+  AssetIndex,
+} from '@e2r/core'
 
-export type { CellEdit, CheckIssue }
+export type { CellEdit, CheckIssue, AssetIndex }
+export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
 export type SaveResult = { ok: true } | { ok: false; error: string }
 
@@ -49,9 +57,12 @@ export interface E2rApi {
   readTable(xlsxPath: string): Promise<TableResult>
   saveTable(xlsxPath: string, edits: CellEdit[]): Promise<SaveResult>
   check(xlsxPath: string): Promise<CheckResult>
+  linkProject(dir: string): Promise<ProjectResult>
   pathForFile(file: File): string
   /** 开发用：通过 E2R_DEMO 自动载入一个表格（自动化截图/验证） */
   demoFile: string | null
   /** 开发用：通过 E2R_PAGE 指定初始页面 */
   demoPage: string | null
+  /** 开发用：通过 E2R_PROJECT 自动关联工程 */
+  demoProject: string | null
 }

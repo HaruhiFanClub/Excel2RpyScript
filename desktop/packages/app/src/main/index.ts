@@ -1,11 +1,14 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join } from 'node:path'
+import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
+import { join, normalize } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   readTable,
   saveTableEdits,
   readWorkbook,
   checkSheets,
   summarize,
+  scanRenpyAssets,
+  resolveGamePath,
   type CellEdit,
 } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
@@ -17,7 +20,15 @@ import type {
   TableResult,
   SaveResult,
   CheckResult,
+  ProjectResult,
 } from '../shared/ipc'
+
+// asset:// 协议：把关联工程 game/ 下的文件喂给渲染进程（图片/音频预览）
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+])
+
+let linkedGamePath: string | null = null
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -37,6 +48,7 @@ function createWindow(): void {
       additionalArguments: [
         ...(process.env['E2R_DEMO'] ? [`--e2r-demo=${process.env['E2R_DEMO']}`] : []),
         ...(process.env['E2R_PAGE'] ? [`--e2r-page=${process.env['E2R_PAGE']}`] : []),
+        ...(process.env['E2R_PROJECT'] ? [`--e2r-project=${process.env['E2R_PROJECT']}`] : []),
       ],
     },
   })
@@ -101,9 +113,34 @@ function registerIpc(): void {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
+  ipcMain.handle('project:link', async (_e, dir: string): Promise<ProjectResult> => {
+    try {
+      const gamePath = resolveGamePath(dir)
+      const index = await scanRenpyAssets(gamePath)
+      linkedGamePath = gamePath
+      return { ok: true, ...index }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 }
 
 void app.whenReady().then(() => {
+  protocol.handle('asset', (request) => {
+    if (!linkedGamePath) return new Response('no project', { status: 404 })
+    try {
+      const url = new URL(request.url)
+      const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+      const root = normalize(linkedGamePath)
+      const abs = normalize(join(root, rel))
+      if (abs !== root && !abs.startsWith(root + (root.endsWith('/') ? '' : '/'))) {
+        return new Response('forbidden', { status: 403 })
+      }
+      return net.fetch(pathToFileURL(abs).toString())
+    } catch {
+      return new Response('error', { status: 500 })
+    }
+  })
   registerIpc()
   createWindow()
   app.on('activate', () => {

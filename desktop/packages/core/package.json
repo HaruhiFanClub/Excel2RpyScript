@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./xlsx": "./src/xlsx/readWorkbook.ts",
     "./table": "./src/tableColumns.ts",
-    "./settings": "./src/settings/converterSetting.ts"
+    "./settings": "./src/settings/converterSetting.ts",
+    "./assets": "./src/assets.ts"
   },
   "scripts": {
     "test": "vitest run",

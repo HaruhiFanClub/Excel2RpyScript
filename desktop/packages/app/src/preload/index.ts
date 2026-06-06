@@ -7,12 +7,14 @@ import type {
   E2rApi,
   PreviewArgs,
   PreviewResult,
+  ProjectResult,
   SaveResult,
   TableResult,
 } from '../shared/ipc'
 
 const demoArg = process.argv.find((a) => a.startsWith('--e2r-demo='))
 const pageArg = process.argv.find((a) => a.startsWith('--e2r-page='))
+const projArg = process.argv.find((a) => a.startsWith('--e2r-project='))
 
 const api: E2rApi = {
   openXlsx: () => ipcRenderer.invoke('dialog:openXlsx'),
@@ -23,6 +25,7 @@ const api: E2rApi = {
   saveTable: (xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> =>
     ipcRenderer.invoke('table:save', xlsxPath, edits),
   check: (xlsxPath: string): Promise<CheckResult> => ipcRenderer.invoke('check', xlsxPath),
+  linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
   pathForFile: (file: File): string => {
     try {
       return webUtils.getPathForFile(file)
@@ -32,6 +35,7 @@ const api: E2rApi = {
   },
   demoFile: demoArg ? demoArg.slice('--e2r-demo='.length) : null,
   demoPage: pageArg ? pageArg.slice('--e2r-page='.length) : null,
+  demoProject: projArg ? projArg.slice('--e2r-project='.length) : null,
 }
 
 contextBridge.exposeInMainWorld('e2r', api)

@@ -14,11 +14,13 @@ export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
   const [page, setPage] = useState<PageId>(initial && PAGES.includes(initial) ? initial : 'convert')
 
-  // 开发钩子：E2R_DEMO 预置工作簿（两个页面共享）
+  // 开发钩子：E2R_DEMO 预置工作簿、E2R_PROJECT 自动关联工程
   const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
+  const linkProject = useWorkspaceStore((s) => s.linkProject)
   useEffect(() => {
     if (window.e2r.demoFile) setWorkbookPath(window.e2r.demoFile)
-  }, [setWorkbookPath])
+    if (window.e2r.demoProject) void linkProject(window.e2r.demoProject)
+  }, [setWorkbookPath, linkProject])
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-app-bg text-app-text">
