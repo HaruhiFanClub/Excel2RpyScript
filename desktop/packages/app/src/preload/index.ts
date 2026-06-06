@@ -5,6 +5,8 @@ import type {
   DeployArgs,
   DeployResult,
   DiffResult,
+  EngineStartResult,
+  EngineStatus,
   ConvertArgs,
   ConvertResult,
   E2rApi,
@@ -49,6 +51,14 @@ const api: E2rApi = {
     const handler = (_e: unknown, p: TtsProgress) => cb(p)
     ipcRenderer.on('tts:progress', handler)
     return () => ipcRenderer.removeListener('tts:progress', handler)
+  },
+  ttsEngineStart: (): Promise<EngineStartResult> => ipcRenderer.invoke('tts:engineStart'),
+  ttsEngineStop: (): Promise<void> => ipcRenderer.invoke('tts:engineStop'),
+  ttsEngineStatus: (): Promise<EngineStatus> => ipcRenderer.invoke('tts:engineStatus'),
+  onEngineLog: (cb: (line: string) => void): (() => void) => {
+    const handler = (_e: unknown, line: string) => cb(line)
+    ipcRenderer.on('tts:engineLog', handler)
+    return () => ipcRenderer.removeListener('tts:engineLog', handler)
   },
   deploy: (args: DeployArgs): Promise<DeployResult> => ipcRenderer.invoke('project:deploy', args),
   pathForFile: (file: File): string => {

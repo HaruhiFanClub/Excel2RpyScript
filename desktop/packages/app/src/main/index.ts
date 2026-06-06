@@ -3,6 +3,7 @@ import { join, normalize, dirname } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { loadTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
+import { engineStart, engineStop, engineStatus } from './ttsServer'
 import {
   readTable,
   saveTableEdits,
@@ -37,6 +38,8 @@ import type {
   TtsSynthSummary,
   DeployArgs,
   DeployResult,
+  EngineStartResult,
+  EngineStatus,
 } from '../shared/ipc'
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -198,6 +201,11 @@ function registerIpc(): void {
     }
   })
   ipcMain.handle('tts:health', (_e, baseUrl: string): Promise<TtsHealth> => ttsHealth(baseUrl))
+  ipcMain.handle('tts:engineStart', (e): Promise<EngineStartResult> =>
+    engineStart((line) => e.sender.send('tts:engineLog', line)),
+  )
+  ipcMain.handle('tts:engineStop', (): void => engineStop())
+  ipcMain.handle('tts:engineStatus', (): EngineStatus => engineStatus())
   ipcMain.handle('tts:jobs', async (_e, args: TtsJobsArgs): Promise<TtsJobsResult> => {
     try {
       const cfg = args.configPath ? await loadTtsConfig(args.configPath) : parseLegacyTtsConfig({})
@@ -233,6 +241,7 @@ function registerIpc(): void {
             audioDir,
             textLang: args.textLang,
             promptLang: args.promptLang,
+            ...(args.baseUrl ? { baseUrl: args.baseUrl } : {}),
           })
           done++
           e.sender.send('tts:progress', {
@@ -282,6 +291,8 @@ void app.whenReady().then(() => {
   })
 })
 
+app.on('before-quit', () => engineStop())
 app.on('window-all-closed', () => {
+  engineStop()
   if (process.platform !== 'darwin') app.quit()
 })

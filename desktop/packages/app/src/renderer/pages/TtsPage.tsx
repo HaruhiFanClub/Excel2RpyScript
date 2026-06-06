@@ -35,6 +35,8 @@ export default function TtsPage() {
 
   const [config, setConfig] = useState<TtsConfig | null>(null)
   const [health, setHealth] = useState<{ ok: boolean; device?: string; error?: string } | null>(null)
+  const [managedUrl, setManagedUrl] = useState<string | null>(null)
+  const [engineStarting, setEngineStarting] = useState(false)
   const [textLang, setTextLang] = useState('auto')
   const [promptLang, setPromptLang] = useState('auto')
   const [useVoiceText, setUseVoiceText] = useState(false)
@@ -90,6 +92,20 @@ export default function TtsPage() {
     if (p) setTtsConfigPath(p)
   }, [setTtsConfigPath])
 
+  const startEngine = useCallback(async () => {
+    setEngineStarting(true)
+    setError(null)
+    try {
+      const r = await window.e2r.ttsEngineStart()
+      if (r.ok) {
+        setManagedUrl(r.baseUrl)
+        setHealth(await window.e2r.ttsHealth(r.baseUrl))
+      } else setError(r.error)
+    } finally {
+      setEngineStarting(false)
+    }
+  }, [])
+
   const synth = useCallback(
     async (only?: string[]) => {
       if (!workbookPath || !ttsConfigPath) return
@@ -103,6 +119,7 @@ export default function TtsPage() {
           textLang,
           promptLang,
           ...(only ? { only } : {}),
+          ...(managedUrl ? { baseUrl: managedUrl } : {}),
         })
         if (!r.ok && r.error) setError(r.error)
         await refresh()
@@ -110,7 +127,7 @@ export default function TtsPage() {
         setBusy(false)
       }
     },
-    [workbookPath, ttsConfigPath, useVoiceText, textLang, promptLang, refresh],
+    [workbookPath, ttsConfigPath, useVoiceText, textLang, promptLang, refresh, managedUrl],
   )
 
   const audition = (job: EnrichedJob) => {
@@ -150,6 +167,15 @@ export default function TtsPage() {
           className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 font-medium text-app-text hover:bg-white/70 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
         >
           <Settings2 size={13} /> {ttsConfigPath ? '更换预设' : '选择 TTS 预设 (config.json)'}
+        </button>
+        <button
+          type="button"
+          onClick={startEngine}
+          disabled={engineStarting || !!managedUrl}
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 font-medium text-app-text hover:bg-white/70 disabled:opacity-60 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+        >
+          {engineStarting ? <span className="spinner" /> : <Wand2 size={13} />}
+          {managedUrl ? '内置引擎已启动' : engineStarting ? '启动中…' : '启动内置引擎'}
         </button>
         {config && (
           <>

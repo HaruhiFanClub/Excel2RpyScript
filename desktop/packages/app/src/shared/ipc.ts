@@ -37,7 +37,14 @@ export interface TtsSynthArgs {
   textLang: string
   promptLang: string
   only?: string[] // 限定要合成的 outputName；缺省=全部
+  baseUrl?: string // 覆盖端点（内置引擎）
 }
+export interface EngineStatus {
+  running: boolean
+  baseUrl: string | null
+  starting: boolean
+}
+export type EngineStartResult = { ok: true; baseUrl: string } | { ok: false; error: string }
 export interface TtsProgress {
   outputName: string
   index: number
@@ -118,6 +125,10 @@ export interface E2rApi {
   ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
   ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>
   onTtsProgress(cb: (p: TtsProgress) => void): () => void
+  ttsEngineStart(): Promise<EngineStartResult>
+  ttsEngineStop(): Promise<void>
+  ttsEngineStatus(): Promise<EngineStatus>
+  onEngineLog(cb: (line: string) => void): () => void
   deploy(args: DeployArgs): Promise<DeployResult>
   pathForFile(file: File): string
   /** 开发用：通过 E2R_DEMO 自动载入一个表格（自动化截图/验证） */

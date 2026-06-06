@@ -79,11 +79,12 @@ export interface SynthOptions {
   audioDir: string
   textLang: string
   promptLang: string
+  baseUrl?: string // 覆盖端点（用内置引擎时）
 }
 
 // 合成单个任务（切权重 → POST /tts → 落盘）
 export async function synthOne(job: TtsJob, opts: SynthOptions): Promise<void> {
-  const base = opts.cfg.apiBaseUrl
+  const base = opts.baseUrl ?? opts.cfg.apiBaseUrl
   const model = opts.cfg.roleModelMapping[job.roleName]
   if (model) {
     if (model.gpt) await fetch(`${base}set_gpt_weights?weights_path=${encodeURIComponent(model.gpt)}`)
