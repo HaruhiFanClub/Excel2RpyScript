@@ -1,0 +1,27 @@
+appId: com.haruhifanclub.excel2rpy
+productName: Excel2Rpy
+directories:
+  output: release
+  buildResources: build
+# 仅打包构建产物与必要依赖（node_modules 由 electron-builder 依据 package.json 收集）
+files:
+  - out/**
+  - package.json
+# 内置 TTS 引擎与模型（由 scripts/freeze-tts.mjs 生成到 desktop/resources/tts；
+# 不存在时该项由 build-dist.mjs 通过 --config 注入，基础 --dir 构建可不带）
+asar: true
+asarUnpack:
+  - resources/**
+mac:
+  target:
+    - dmg
+  category: public.app-category.productivity
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # 内置冻结二进制 + dylib 需签名/公证（CI 配置 identity）
+win:
+  target:
+    - nsis
+  artifactName: ${productName}-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

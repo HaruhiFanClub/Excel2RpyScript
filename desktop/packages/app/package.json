@@ -1,14 +1,17 @@
 {
   "name": "@e2r/app",
   "version": "0.0.0",
-  "description": "Excel2Rpy Electron 应用（M0：导入 xlsx → 转换 → 导出 rpy）",
+  "description": "Excel2Rpy Electron 应用：转换 / 表格 / 语音合成 / 检查 / 工程部署",
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "pack": "electron-vite build && electron-builder --dir",
+    "dist:mac": "node ../../scripts/build-dist.mjs mac",
+    "dist:win": "node ../../scripts/build-dist.mjs win"
   },
   "dependencies": {
     "@e2r/core": "workspace:*",
@@ -31,6 +34,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "32.3.3",
+    "electron-builder": "^26.15.0",
     "electron-vite": "^2.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
