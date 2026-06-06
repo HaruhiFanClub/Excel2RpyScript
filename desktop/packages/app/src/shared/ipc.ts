@@ -6,10 +6,12 @@ import type {
   CellEdit,
   CheckIssue,
   AssetIndex,
+  DiffReport,
 } from '@e2r/core'
 
-export type { CellEdit, CheckIssue, AssetIndex }
+export type { CellEdit, CheckIssue, AssetIndex, DiffReport }
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
+export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
 export type SaveResult = { ok: true } | { ok: false; error: string }
 
@@ -57,6 +59,7 @@ export interface E2rApi {
   readTable(xlsxPath: string): Promise<TableResult>
   saveTable(xlsxPath: string, edits: CellEdit[]): Promise<SaveResult>
   check(xlsxPath: string): Promise<CheckResult>
+  diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
   pathForFile(file: File): string
   /** 开发用：通过 E2R_DEMO 自动载入一个表格（自动化截图/验证） */

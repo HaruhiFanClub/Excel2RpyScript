@@ -9,6 +9,7 @@ import {
   summarize,
   scanRenpyAssets,
   resolveGamePath,
+  diffWorkbooks,
   type CellEdit,
 } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
@@ -21,6 +22,7 @@ import type {
   SaveResult,
   CheckResult,
   ProjectResult,
+  DiffResult,
 } from '../shared/ipc'
 
 // asset:// 协议：把关联工程 game/ 下的文件喂给渲染进程（图片/音频预览）
@@ -109,6 +111,14 @@ function registerIpc(): void {
       const { sheets } = await readWorkbook(xlsxPath)
       const issues = checkSheets(sheets)
       return { ok: true, issues, summary: summarize(issues) }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+  ipcMain.handle('diff', async (_e, oldPath: string, newPath: string): Promise<DiffResult> => {
+    try {
+      const [o, n] = await Promise.all([readTable(oldPath), readTable(newPath)])
+      return { ok: true, report: diffWorkbooks(o, n) }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }

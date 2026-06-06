@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CircleAlert, TriangleAlert, Info, ShieldCheck, RefreshCw, FileSpreadsheet } from 'lucide-react'
 import type { CheckIssue, CheckSummary } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
+import { DiffPanel } from '../components/DiffPanel'
 
 type Severity = CheckIssue['severity']
 type Filter = 'all' | Severity
@@ -68,28 +69,51 @@ export default function CheckPage() {
   )
 
   const total = summary ? summary.error + summary.warn + summary.info : 0
+  const [mode, setMode] = useState<'check' | 'diff'>('check')
 
   return (
     <div className="flex h-full flex-col">
       <header className="mb-4 flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-[20px] font-semibold text-app-text">检查</h2>
+          <h2 className="text-[20px] font-semibold text-app-text">
+            {mode === 'check' ? '检查' : '版本对比'}
+          </h2>
           <p className="mt-1 text-[13px] text-app-muted">
-            按填写规范扫描剧本，发现错误 / 警告 / 提示
+            {mode === 'check' ? '按填写规范扫描剧本，发现错误 / 警告 / 提示' : '导入旧表，与当前表生成差异报告'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => workbookPath && run(workbookPath)}
-          disabled={!workbookPath || loading}
-          className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
-        >
-          {loading ? <span className="spinner" /> : <RefreshCw size={14} />} 重新检查
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-[10px] border border-app-border bg-black/5 p-0.5 dark:bg-white/5">
+            {(['check', 'diff'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                  mode === m ? 'bg-white text-app-text shadow-sm dark:bg-zinc-700' : 'text-app-muted hover:text-app-text'
+                }`}
+              >
+                {m === 'check' ? '检查' : '对比'}
+              </button>
+            ))}
+          </div>
+          {mode === 'check' && (
+            <button
+              type="button"
+              onClick={() => workbookPath && run(workbookPath)}
+              disabled={!workbookPath || loading}
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
+            >
+              {loading ? <span className="spinner" /> : <RefreshCw size={14} />} 重新检查
+            </button>
+          )}
+        </div>
       </header>
 
+      {mode === 'diff' && <DiffPanel />}
+
       {/* 概览 chips（兼作筛选） */}
-      {summary && (
+      {mode === 'check' && summary && (
         <div className="mb-3 flex items-center gap-2">
           <Chip active={filter === 'all'} onClick={() => setFilter('all')} cls="bg-black/5 text-app-text dark:bg-white/10">
             全部 {total}
@@ -102,6 +126,7 @@ export default function CheckPage() {
         </div>
       )}
 
+      {mode === 'check' && (
       <section className="glass-card custom-scrollbar min-h-0 flex-1 overflow-auto">
         {error ? (
           <div className="flex h-full items-center justify-center p-10 text-rose-500">
@@ -135,6 +160,7 @@ export default function CheckPage() {
           </ul>
         )}
       </section>
+      )}
     </div>
   )
 }

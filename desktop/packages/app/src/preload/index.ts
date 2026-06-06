@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   CellEdit,
   CheckResult,
+  DiffResult,
   ConvertArgs,
   ConvertResult,
   E2rApi,
@@ -25,6 +26,8 @@ const api: E2rApi = {
   saveTable: (xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> =>
     ipcRenderer.invoke('table:save', xlsxPath, edits),
   check: (xlsxPath: string): Promise<CheckResult> => ipcRenderer.invoke('check', xlsxPath),
+  diff: (oldPath: string, newPath: string): Promise<DiffResult> =>
+    ipcRenderer.invoke('diff', oldPath, newPath),
   linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
   pathForFile: (file: File): string => {
     try {
