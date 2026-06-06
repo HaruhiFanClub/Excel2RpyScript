@@ -9,7 +9,7 @@ import {
   type GridApi,
   type GridReadyEvent,
 } from 'ag-grid-community'
-import { FileSpreadsheet, TableProperties, Save, RotateCcw, X } from 'lucide-react'
+import { FileSpreadsheet, TableProperties, Save, RotateCcw, X, MoveHorizontal } from 'lucide-react'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
 import type { TtsConfig } from '@e2r/core/tts'
@@ -22,6 +22,7 @@ import {
   VoiceCmdCell,
   type GridContext,
 } from '../components/cellRenderers'
+import { SpritePositionsModal } from '../components/SpritePositionsModal'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
@@ -65,7 +66,10 @@ export default function TablePage() {
   const assets = useWorkspaceStore((s) => s.assets)
   const setAssets = useWorkspaceStore((s) => s.setAssets)
   const ttsConfigPath = useWorkspaceStore((s) => s.ttsConfigPath)
+  const spritePositions = useWorkspaceStore((s) => s.spritePositions)
+  const setSpritePositions = useWorkspaceStore((s) => s.setSpritePositions)
   const [ttsConfig, setTtsConfig] = useState<TtsConfig | null>(null)
+  const [posOpen, setPosOpen] = useState(false)
 
   const [data, setData] = useState<TableData | null>(null)
   const [active, setActive] = useState(0)
@@ -194,7 +198,7 @@ export default function TablePage() {
   const rowData = useMemo<Row[]>(
     () =>
       sheet?.rows.map((r) => {
-        const s = parseSprites(r.cells['character'] ?? '')
+        const s = parseSprites(r.cells['character'] ?? '', spritePositions)
         return {
           __row: r.excelRow,
           ...r.cells,
@@ -204,8 +208,23 @@ export default function TablePage() {
           sprite_other: s.other,
         }
       }) ?? [],
-    [sheet],
+    [sheet, spritePositions],
   )
+
+  // 当前表中出现的立绘角色（用于位置编辑器）
+  const spriteChars = useMemo(() => {
+    const set = new Set<string>()
+    for (const sh of data?.sheets ?? []) {
+      for (const r of sh.rows) {
+        for (const seg of (r.cells['character'] ?? '').split(';')) {
+          const t = seg.trim().split(/\s+/).filter(Boolean)
+          if (t.length >= 2 && t[0]) set.add(t[0])
+        }
+      }
+    }
+    for (const c of Object.keys(spritePositions)) set.add(c)
+    return [...set].sort()
+  }, [data, spritePositions])
 
   const onGridReady = useCallback((e: GridReadyEvent<Row>) => {
     gridApi.current = e.api
@@ -218,12 +237,15 @@ export default function TablePage() {
       const excelRow = Number(e.data['__row'])
       if (col.startsWith('sprite_')) {
         // 三列任一变化 → 重建单一 character 列（左→中→右→other 顺序）
-        const col19 = serializeSprites({
-          left: String(e.data['sprite_left'] ?? ''),
-          mid: String(e.data['sprite_mid'] ?? ''),
-          right: String(e.data['sprite_right'] ?? ''),
-          other: String(e.data['sprite_other'] ?? ''),
-        })
+        const col19 = serializeSprites(
+          {
+            left: String(e.data['sprite_left'] ?? ''),
+            mid: String(e.data['sprite_mid'] ?? ''),
+            right: String(e.data['sprite_right'] ?? ''),
+            other: String(e.data['sprite_other'] ?? ''),
+          },
+          spritePositions,
+        )
         edits.current.set(editKey(sheet.name, excelRow, 'character'), {
           sheet: sheet.name,
           excelRow,
@@ -240,7 +262,7 @@ export default function TablePage() {
       }
       setDirty(edits.current.size)
     },
-    [sheet],
+    [sheet, spritePositions],
   )
 
   const save = useCallback(async () => {
@@ -275,6 +297,13 @@ export default function TablePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPosOpen(true)}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3 text-[12px] font-medium text-app-text transition-colors hover:bg-white/80 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+          >
+            <MoveHorizontal size={14} /> 立绘位置
+          </button>
           {dirty > 0 && (
             <>
               <span className="text-[12px] text-amber-500">{dirty} 处未保存</span>
@@ -382,6 +411,15 @@ export default function TablePage() {
           </button>
         </div>
       )}
+
+      <SpritePositionsModal
+        open={posOpen}
+        onClose={() => setPosOpen(false)}
+        chars={spriteChars}
+        transforms={assets?.transforms ?? []}
+        value={spritePositions}
+        onChange={setSpritePositions}
+      />
     </div>
   )
 }

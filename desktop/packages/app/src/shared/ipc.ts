@@ -11,9 +11,20 @@ import type {
   TtsJob,
   EnrichedJob,
   FormatResult,
+  SpritePositions,
 } from '@e2r/core'
 
-export type { CellEdit, CheckIssue, AssetIndex, DiffReport, TtsConfig, TtsJob, EnrichedJob, FormatResult }
+export type {
+  CellEdit,
+  CheckIssue,
+  AssetIndex,
+  DiffReport,
+  TtsConfig,
+  TtsJob,
+  EnrichedJob,
+  FormatResult,
+  SpritePositions,
+}
 
 export type TtsConfigResult = { ok: true; config: TtsConfig } | { ok: false; error: string }
 export interface TtsHealth {
@@ -77,6 +88,7 @@ export interface ProjectManifest {
   renpyProject?: string
   ttsConfig?: string
   mode: ConversionMode
+  spritePositions?: SpritePositions
 }
 export type ProjectReadResult =
   | { ok: true; manifest: ProjectManifest }

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ConversionMode } from '@e2r/core'
-import type { AssetIndex } from '../../shared/ipc'
+import type { AssetIndex, SpritePositions } from '../../shared/ipc'
 
 interface WorkspaceState {
   workbookPath: string
@@ -11,10 +11,12 @@ interface WorkspaceState {
   renpyDir: string // 关联工程时用户选择的目录（持久化，用于重开时重新关联）
   ttsConfigPath: string // TTS 预设 config.json 路径
   currentProjectPath: string | null // 当前 .e2rproj 工程文件
+  spritePositions: SpritePositions // 每角色 左/中/右 自定义位置 token
   setWorkbookPath: (p: string) => void
   setOutputDir: (p: string) => void
   setMode: (m: ConversionMode) => void
   setTtsConfigPath: (p: string) => void
+  setSpritePositions: (s: SpritePositions) => void
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
   setAssets: (a: AssetIndex) => void
   clearProject: () => void
@@ -32,10 +34,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       renpyDir: '',
       ttsConfigPath: '',
       currentProjectPath: null,
+      spritePositions: {},
       setWorkbookPath: (workbookPath) => set({ workbookPath }),
       setOutputDir: (outputDir) => set({ outputDir }),
       setMode: (mode) => set({ mode }),
       setTtsConfigPath: (ttsConfigPath) => set({ ttsConfigPath }),
+      setSpritePositions: (spritePositions) => set({ spritePositions }),
       linkProject: async (dir) => {
         const r = await window.e2r.linkProject(dir)
         if (r.ok) {
@@ -59,6 +63,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           workbookPath: m.workbook,
           mode: m.mode,
           ttsConfigPath: m.ttsConfig ?? '',
+          spritePositions: m.spritePositions ?? {},
           currentProjectPath: path,
           assets: null,
           renpyDir: '',
@@ -78,6 +83,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           workbook: s.workbookPath,
           ...(s.renpyDir ? { renpyProject: s.renpyDir } : {}),
           ...(s.ttsConfigPath ? { ttsConfig: s.ttsConfigPath } : {}),
+          ...(Object.keys(s.spritePositions).length ? { spritePositions: s.spritePositions } : {}),
           mode: s.mode,
         }
         const r = await window.e2r.writeProject(path, manifest)
@@ -94,6 +100,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         renpyDir: s.renpyDir,
         ttsConfigPath: s.ttsConfigPath,
         currentProjectPath: s.currentProjectPath,
+        spritePositions: s.spritePositions,
       }),
     },
   ),
