@@ -30,13 +30,12 @@ async function readManifest(dir: string, file = MANIFEST): Promise<Record<string
 //  仅存在但签名不匹配 → stale（输入已改）；都没有 → missing
 export async function enrichedJobs(
   xlsxPath: string,
-  useVoiceText: boolean,
   cfg: TtsConfig,
   textLang: string,
   pendingDir: string,
   voiceDir: string,
 ): Promise<EnrichedJob[]> {
-  const jobs = await planJobs(xlsxPath, useVoiceText)
+  const jobs = await planJobs(xlsxPath)
   const [pendWavs, voiceWavs, genMan, appMan] = await Promise.all([
     listSynthesized(pendingDir),
     listSynthesized(voiceDir),
@@ -113,9 +112,9 @@ export async function listSynthesized(audioDir: string): Promise<string[]> {
   }
 }
 
-export async function planJobs(xlsxPath: string, useVoiceText: boolean): Promise<TtsJob[]> {
+export async function planJobs(xlsxPath: string): Promise<TtsJob[]> {
   const { sheets } = await readWorkbook(xlsxPath)
-  return planTtsJobs(sheets, { useVoiceText })
+  return planTtsJobs(sheets)
 }
 
 export interface SynthOptions {

@@ -30,7 +30,7 @@ describe('planTtsJobs', () => {
         row({ text: '台词2（继承角色）', voice: 'TTS', voice_cmd: 'kyon_2' }),
       ]),
     ]
-    const jobs = planTtsJobs(sheets, { useVoiceText: false })
+    const jobs = planTtsJobs(sheets)
     expect(jobs).toHaveLength(2)
     expect(jobs[0]).toMatchObject({ sheetIndex: 1, rowIndex: 0, roleName: '阿虚', voiceCmd: 'kyon_1' })
     expect(jobs[0]!.outputName).toBe('阿虚_sheet2_row8_synthesized.wav')
@@ -44,18 +44,21 @@ describe('planTtsJobs', () => {
       sheet('Sheet1', [row({ role_name: 'A', text: '无语音' })]),
       sheet('Sheet2', [row({ role_name: '阿虚', text: '台词1', voice: 'tts', voice_cmd: 'c' })]),
     ]
-    const jobs = planTtsJobs(sheets, { useVoiceText: false })
+    const jobs = planTtsJobs(sheets)
     const { files } = runPipeline(sheets, { mode: 'legacy-compat' })
     const sheet2 = files.find((f) => f.label === 'Sheet2')!
     expect(sheet2.content).toContain(`voice "${jobs[0]!.outputName}"`)
   })
 
-  it('useVoiceText 用 col18', () => {
-    const sheets = [
+  it('有选填语音文本(col18)则用之，否则用台词(col1)', () => {
+    const withVt = [
       sheet('S', [row({ role_name: 'A', text: '中文', voice_text: '日文', voice: 'tts', voice_cmd: 'c' })]),
     ]
-    expect(planTtsJobs(sheets, { useVoiceText: true })[0]!.text).toBe('日文')
-    expect(planTtsJobs(sheets, { useVoiceText: false })[0]!.text).toBe('中文')
+    const onlyText = [
+      sheet('S', [row({ role_name: 'A', text: '中文', voice: 'tts', voice_cmd: 'c' })]),
+    ]
+    expect(planTtsJobs(withVt)[0]!.text).toBe('日文')
+    expect(planTtsJobs(onlyText)[0]!.text).toBe('中文')
   })
 })
 
@@ -123,14 +126,14 @@ describe('parseLegacyTtsConfig / 签名', () => {
   it('改语音指令 → 签名变化（未重新生成检测）', () => {
     const sheets = [sheet('S', [row({ role_name: 'A', text: 't', voice: 'tts', voice_cmd: 'c1' })])]
     const cfg = parseLegacyTtsConfig({})
-    const j1 = planTtsJobs(sheets, { useVoiceText: false })[0]!
+    const j1 = planTtsJobs(sheets)[0]!
     const j2 = { ...j1, voiceCmd: 'c2' }
     expect(ttsJobSignature(j1, cfg, 'auto')).not.toBe(ttsJobSignature(j2, cfg, 'auto'))
   })
 
   it('角色有模型→远端、无模型→内嵌；远端换端点/权重 → 签名变化', () => {
     const sheets = [sheet('S', [row({ role_name: 'A', text: 't', voice: 'tts', voice_cmd: 'c1' })])]
-    const j = planTtsJobs(sheets, { useVoiceText: false })[0]!
+    const j = planTtsJobs(sheets)[0]!
     const embedded = parseLegacyTtsConfig({
       role_model_mapping: { A: { gpt: '', sovits: '' } },
       API_BASE_URL: { base: 'http://a/' },

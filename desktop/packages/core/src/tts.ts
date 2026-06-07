@@ -13,14 +13,11 @@ export interface TtsJob {
   sheetName: string
   rowIndex: number // 解析行序号（0 基）；Excel 行号 = rowIndex + 8
   roleName: string // 前向填充后的角色名
-  text: string // 待合成文本（按 useVoiceText 取 col1 或 col18）
+  text: string // 待合成文本（有 col18 选填语音文本则用之，否则用 col1 台词）
   voiceCmd: string // 语音指令（col24）
   outputName: string // {role}_sheet{sheetIndex+1}_row{rowIndex+8}_synthesized.wav
 }
 
-export interface PlanTtsOptions {
-  useVoiceText: boolean // true → 用「选填语音文本」(col18)，否则用台词(col1)
-}
 
 // 带 UI 状态的任务：tone=语气
 // status：missing 未生成 / generated 已生成(临时,可试听,未落实) / applied 已应用(已复制进 workspace)
@@ -31,7 +28,8 @@ export interface EnrichedJob extends TtsJob {
 }
 
 // 仅对 语音列(col23)=tts（不分大小写）的行规划合成任务，角色名前向填充。
-export function planTtsJobs(sheets: ParsedSheet[], opts: PlanTtsOptions): TtsJob[] {
+// 合成文本自动取舍：有「选填语音文本」(col18) 就用它，否则用台词(col1)，无需用户勾选。
+export function planTtsJobs(sheets: ParsedSheet[]): TtsJob[] {
   const jobs: TtsJob[] = []
   sheets.forEach((sheet, sheetIndex) => {
     let current: string | null = null
@@ -40,7 +38,8 @@ export function planTtsJobs(sheets: ParsedSheet[], opts: PlanTtsOptions): TtsJob
       if (roleStr.trim()) current = roleStr
       const role = current === null ? 'None' : current
       if (asStr(col(row, 'voice')).trim().toLowerCase() !== 'tts') return
-      const text = opts.useVoiceText ? asStr(col(row, 'voice_text')) : asStr(col(row, 'text'))
+      const voiceText = asStr(col(row, 'voice_text'))
+      const text = voiceText.trim() ? voiceText : asStr(col(row, 'text'))
       jobs.push({
         sheetIndex,
         sheetName: sheet.name,

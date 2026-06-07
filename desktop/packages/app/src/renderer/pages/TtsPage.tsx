@@ -40,7 +40,6 @@ export default function TtsPage() {
 
   const [textLang, setTextLang] = useState('auto')
   const [promptLang, setPromptLang] = useState('auto')
-  const [useVoiceText, setUseVoiceText] = useState(false)
   const [jobs, setJobs] = useState<EnrichedJob[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -67,12 +66,12 @@ export default function TtsPage() {
       setJobs([])
       return
     }
-    const r = await window.e2r.ttsJobs({ xlsxPath: workbookPath, useVoiceText, textLang })
+    const r = await window.e2r.ttsJobs({ xlsxPath: workbookPath, textLang })
     if (r.ok) {
       setJobs(r.jobs)
       setError(null)
     } else setError(r.error)
-  }, [workbookPath, useVoiceText, textLang])
+  }, [workbookPath, textLang])
 
   useEffect(() => {
     void refresh()
@@ -106,7 +105,6 @@ export default function TtsPage() {
       try {
         const r = await window.e2r.ttsSynthesize({
           xlsxPath: workbookPath,
-          useVoiceText,
           textLang,
           promptLang,
           ...(only ? { only } : {}),
@@ -119,7 +117,7 @@ export default function TtsPage() {
         setBusy(false)
       }
     },
-    [workbookPath, useVoiceText, textLang, promptLang, refresh, managedUrl],
+    [workbookPath, textLang, promptLang, refresh, managedUrl],
   )
 
   const apply = useCallback(
@@ -213,10 +211,6 @@ export default function TtsPage() {
           <Select value={textLang} onChange={setTextLang} />
           <label className="text-app-muted">参考语言</label>
           <Select value={promptLang} onChange={setPromptLang} />
-          <label className="flex items-center gap-1 text-app-muted">
-            <input type="checkbox" checked={useVoiceText} onChange={(e) => setUseVoiceText(e.target.checked)} />
-            用语音文本
-          </label>
           <button onClick={() => void refresh()} className="text-app-muted hover:text-app-text" title="刷新">
             <RefreshCw size={14} />
           </button>

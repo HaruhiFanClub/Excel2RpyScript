@@ -34,7 +34,6 @@ export interface TtsHealth {
 }
 export interface TtsJobsArgs {
   xlsxPath: string
-  useVoiceText: boolean
   textLang: string
 }
 export type TtsJobsResult =
@@ -47,7 +46,6 @@ export interface TtsApplyArgs {
 export type TtsApplyResult = { ok: true; applied: number } | { ok: false; error: string }
 export interface TtsSynthArgs {
   xlsxPath: string
-  useVoiceText: boolean
   textLang: string
   promptLang: string
   only?: string[] // 限定要合成的 outputName；缺省=全部

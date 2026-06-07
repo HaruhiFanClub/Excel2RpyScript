@@ -335,7 +335,7 @@ function registerIpc(): void {
     try {
       const cfg = await loadCharacters()
       const { pending, voice } = ttsDirsFor(args.xlsxPath)
-      const jobs = await enrichedJobs(args.xlsxPath, args.useVoiceText, cfg, args.textLang, pending, voice)
+      const jobs = await enrichedJobs(args.xlsxPath, cfg, args.textLang, pending, voice)
       return { ok: true, jobs, audioDir: pending }
     } catch (e) {
       return { ok: false, error: errMsg(e) }
@@ -354,7 +354,7 @@ function registerIpc(): void {
   ipcMain.handle('tts:synthesize', async (e, args: TtsSynthArgs): Promise<TtsSynthSummary> => {
     try {
       const cfg = await loadCharacters()
-      let jobs = await planJobs(args.xlsxPath, args.useVoiceText)
+      let jobs = await planJobs(args.xlsxPath)
       if (args.only) {
         const set = new Set(args.only)
         jobs = jobs.filter((j) => set.has(j.outputName))
