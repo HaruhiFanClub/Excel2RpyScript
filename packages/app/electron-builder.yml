@@ -8,7 +8,7 @@ directories:
 files:
   - out/**
   - package.json
-# 内置 TTS 引擎与模型（由 scripts/freeze-tts.mjs 生成到 desktop/resources/tts；
+# 内置 TTS 引擎与模型（由 scripts/freeze-tts.mjs 生成到 resources/tts；
 # 不存在时该项由 build-dist.mjs 通过 --config 注入，基础 --dir 构建可不带）
 asar: true
 asarUnpack:

@@ -7,12 +7,11 @@
 在**目标操作系统**上（PyInstaller 不能跨平台冻结 torch，mac/win 各跑一次）：
 
 ```bash
-cd desktop
 # 内置 TTS：指向推理核心；首次会冻结引擎 + 下载基础模型（较慢、~GB）
 E2R_TTS_CORE=/abs/GPT-SoVITS-inference-core pnpm --filter @e2r/app dist:mac   # 或 dist:win
 ```
 
-产物在 `packages/app/release/`（mac: dmg；win: nsis）。
+产物在 `packages/app/release/`（mac: dmg；win: nsis 安装包 + zip 免安装包）。
 
 不带内置引擎的快速包（仅连接外部 API 端点）：
 
@@ -26,7 +25,7 @@ pnpm --filter @e2r/app dist:mac --skip-tts
 1. **冻结 TTS**（`scripts/freeze-tts.mjs`，缺失时自动）：
    - `pip install pyinstaller`，`download_pretrained.py` 拉基础模型；
    - PyInstaller `--onedir` 冻结 `server.py` → `tts-server`（`--collect-all torch/torchaudio`、`--collect-submodules GPT_SoVITS`、`--add-data configs、GPT_SoVITS/text`）；
-   - 冻结产物 + `pretrained_models` 拷到 `desktop/resources/tts/`。
+   - 冻结产物 + `pretrained_models` 拷到 `resources/tts/`。
 2. `electron-vite build`（main/preload/renderer）。
 3. `electron-builder --mac/--win`，存在 `resources/tts` 时通过 `--config.extraResources` 注入到安装包的 `resources/tts`。
 

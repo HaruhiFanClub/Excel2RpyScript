@@ -7,3 +7,15 @@
 /audio
 /dist
 /predef_ref
+.DS_Store
+node_modules/
+dist/
+out/
+release/
+*.tsbuildinfo
+
+# PyInstaller / TTS freeze artifacts
+resources/tts/
+
+# 私有生产表格的黄金 fixture（仅本地，勿入公开仓库）；公开仓库只带 sample
+packages/core/test/fixtures/real/

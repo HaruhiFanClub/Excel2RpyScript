@@ -1,4 +1,4 @@
-// 把 GPT-SoVITS 推理核心冻结为自包含的 tts-server，连同基础模型放进 desktop/resources/tts。
+// 把 GPT-SoVITS 推理核心冻结为自包含的 tts-server，连同基础模型放进 resources/tts。
 // 需在「目标操作系统」上运行（PyInstaller 无法跨平台冻结 torch）。
 // 用法：E2R_TTS_CORE=/path/to/GPT-SoVITS-inference-core node scripts/freeze-tts.mjs [--hf-mirror]
 import { execFileSync } from 'node:child_process'

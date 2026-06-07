@@ -19,7 +19,7 @@
 
 复现命令（需 `xlrd==1.2.0`，已建好临时 venv `/tmp/e2r_golden_venv`）：
 驱动脚本 `/tmp/e2r_golden_driver.py` 直接调用 `handler.parser/converter/writer`。
-> ⚠️ 这些样本在 `/tmp`，是临时的。重构时应把样本**固化进仓库**（如 `desktop/test/fixtures/golden/`）并写成自动回归测试。
+> ⚠️ 这些样本在 `/tmp`，是临时的。重构时应把样本**固化进仓库**（如 `packages/core/test/fixtures/`）并写成自动回归测试。
 
 ---
 
