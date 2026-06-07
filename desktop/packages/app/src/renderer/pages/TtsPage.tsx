@@ -242,7 +242,7 @@ export default function TtsPage() {
               <tr className="border-b border-app-border text-left">
                 <th className="w-10 px-3 py-2">#</th>
                 <th className="px-2 py-2">角色</th>
-                <th className="px-2 py-2">语气</th>
+                <th className="px-2 py-2">语音指令</th>
                 <th className="px-2 py-2">文本</th>
                 <th className="w-24 px-2 py-2">状态</th>
                 <th className="w-24 px-2 py-2"></th>
@@ -256,7 +256,10 @@ export default function TtsPage() {
                     <td className="px-3 py-1.5 font-mono text-app-muted">{j.sheetName}:{j.rowIndex + 8}</td>
                     <td className="px-2 py-1.5">{j.roleName}</td>
                     <td className="px-2 py-1.5">
-                      <span className="rounded bg-sky-400/12 px-1.5 py-0.5 text-sky-600 dark:text-sky-300">{j.tone}</span>
+                      <span>{j.voiceCmd}</span>
+                      {j.tone && j.tone !== j.voiceCmd && (
+                        <span className="ml-1.5 text-app-muted">{j.tone}</span>
+                      )}
                     </td>
                     <td className="max-w-[1px] truncate px-2 py-1.5" title={j.text}>{j.text}</td>
                     <td className="px-2 py-1.5">

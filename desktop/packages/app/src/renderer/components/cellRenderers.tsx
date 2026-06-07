@@ -130,7 +130,10 @@ export function ComboCell(p: CustomCellRendererProps) {
   const value = String(p.value ?? '')
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
-  const tone = field === 'voice_cmd' && ctx.ttsConfig && value ? toneFor(ctx.ttsConfig, value) : ''
+  // 语音指令：把语气直接拼到指令后面显示（如 kyon_1 认真 有些严厉），不单开蓝框
+  const toneOf =
+    field === 'voice_cmd' && ctx.ttsConfig ? (o: string) => toneFor(ctx.ttsConfig!, o) : undefined
+  const tone = toneOf && value ? toneOf(value) : ''
 
   const choose = (v: string) => {
     p.setValue?.(v)
@@ -139,16 +142,17 @@ export function ComboCell(p: CustomCellRendererProps) {
 
   return (
     <div className="flex h-full w-full items-center gap-1.5 overflow-hidden">
-      {value ? <span className="truncate">{value}</span> : <span className="text-app-muted/40">—</span>}
-      {tone && tone !== value && (
-        <span className="shrink-0 rounded bg-sky-400/12 px-1.5 py-0.5 text-[11px] text-sky-600 dark:text-sky-300">
-          {tone}
-        </span>
-      )}
+      {value ? <span className="shrink-0">{value}</span> : <span className="text-app-muted/40">—</span>}
+      {tone && tone !== value && <span className="truncate text-app-muted">{tone}</span>}
       <button
         ref={btnRef}
         type="button"
         onMouseDown={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => {
+          // 防止双击下拉按钮被表格当成「双击进入编辑」，导致输入态卡死退不出
+          e.stopPropagation()
+          e.preventDefault()
+        }}
         onClick={(e) => {
           e.stopPropagation()
           setOpen((o) => !o)
@@ -165,6 +169,7 @@ export function ComboCell(p: CustomCellRendererProps) {
           anchorRef={btnRef}
           options={comboOptions(ctx, field, p.data ?? {})}
           value={value}
+          toneOf={toneOf}
           onPick={choose}
           onClose={() => setOpen(false)}
         />
@@ -178,12 +183,14 @@ function ComboPopup({
   anchorRef,
   options,
   value,
+  toneOf,
   onPick,
   onClose,
 }: {
   anchorRef: React.RefObject<HTMLElement | null>
   options: string[]
   value: string
+  toneOf?: (o: string) => string
   onPick: (v: string) => void
   onClose: () => void
 }) {
@@ -222,7 +229,12 @@ function ComboPopup({
   }, [anchorRef, onClose])
 
   const q = query.trim().toLowerCase()
-  const filtered = q ? options.filter((o) => o.toLowerCase().includes(q)) : options
+  // 搜索同时匹配指令名与语气（如输入「严厉」也能命中 kyon_1 认真 有些严厉）
+  const label = (o: string) => {
+    const t = toneOf?.(o)
+    return t && t !== o ? `${o} ${t}` : o
+  }
+  const filtered = q ? options.filter((o) => label(o).toLowerCase().includes(q)) : options
 
   return createPortal(
     <div
@@ -248,6 +260,7 @@ function ComboPopup({
           ) : (
             filtered.map((o) => {
               const active = o === value
+              const t = toneOf?.(o)
               return (
                 <button
                   key={o}
@@ -263,7 +276,8 @@ function ComboPopup({
                     size={13}
                     className={`shrink-0 ${active ? 'text-sky-500' : 'text-transparent'}`}
                   />
-                  <span className="truncate">{o}</span>
+                  <span className="shrink-0">{o}</span>
+                  {t && t !== o && <span className="truncate text-app-muted">{t}</span>}
                 </button>
               )
             })
