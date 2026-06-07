@@ -19,7 +19,6 @@ import type {
   SaveResult,
   TableResult,
   TtsConfig,
-  TtsConfigResult,
   TtsHealth,
   TtsJobsArgs,
   TtsJobsResult,
@@ -31,13 +30,11 @@ import type {
 const demoArg = process.argv.find((a) => a.startsWith('--e2r-demo='))
 const pageArg = process.argv.find((a) => a.startsWith('--e2r-page='))
 const projArg = process.argv.find((a) => a.startsWith('--e2r-project='))
-const ttsCfgArg = process.argv.find((a) => a.startsWith('--e2r-ttsconfig='))
 
 const api: E2rApi = {
   openXlsx: () => ipcRenderer.invoke('dialog:openXlsx'),
   selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
-  openJson: () => ipcRenderer.invoke('dialog:openJson'),
-  saveJson: (defaultName?: string) => ipcRenderer.invoke('dialog:saveJson', defaultName),
+  pickAudio: () => ipcRenderer.invoke('dialog:openAudio'),
   openExternal: (url: string): void => {
     void ipcRenderer.invoke('shell:openExternal', url)
   },
@@ -59,11 +56,9 @@ const api: E2rApi = {
   linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
   importAsset: (category: 'image' | 'audio', name: string): Promise<ProjectResult> =>
     ipcRenderer.invoke('asset:import', category, name),
-  ttsLoadConfig: (path: string): Promise<TtsConfigResult> =>
-    ipcRenderer.invoke('tts:loadConfig', path),
-  ttsSaveConfig: (path: string, config: TtsConfig): Promise<SaveResult> =>
-    ipcRenderer.invoke('tts:saveConfig', path, config),
-  ttsBuiltins: (): Promise<{ id: string; name: string }[]> => ipcRenderer.invoke('tts:builtins'),
+  ttsCharacters: (): Promise<TtsConfig> => ipcRenderer.invoke('tts:characters'),
+  ttsSaveCharacters: (config: TtsConfig): Promise<SaveResult> =>
+    ipcRenderer.invoke('tts:saveCharacters', config),
   ttsHealth: (baseUrl: string): Promise<TtsHealth> => ipcRenderer.invoke('tts:health', baseUrl),
   ttsJobs: (args: TtsJobsArgs): Promise<TtsJobsResult> => ipcRenderer.invoke('tts:jobs', args),
   ttsSynthesize: (args: TtsSynthArgs): Promise<TtsSynthSummary> =>
@@ -92,7 +87,6 @@ const api: E2rApi = {
   demoFile: demoArg ? demoArg.slice('--e2r-demo='.length) : null,
   demoPage: pageArg ? pageArg.slice('--e2r-page='.length) : null,
   demoProject: projArg ? projArg.slice('--e2r-project='.length) : null,
-  demoTtsConfig: ttsCfgArg ? ttsCfgArg.slice('--e2r-ttsconfig='.length) : null,
   demoUnlink: process.argv.includes('--e2r-unlink'),
 }
 

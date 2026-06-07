@@ -2,9 +2,9 @@ import {
   ArrowLeftRight,
   TableProperties,
   AudioLines,
+  Users,
   ClipboardCheck,
   FolderKanban,
-  Settings,
   Moon,
   Sun,
   Info,
@@ -13,10 +13,9 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useThemeStore } from '../stores/useThemeStore'
-import { useUiStore } from '../stores/useUiStore'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 
-export type PageId = 'convert' | 'table' | 'tts' | 'check' | 'project'
+export type PageId = 'convert' | 'table' | 'tts' | 'characters' | 'check' | 'project'
 
 interface NavItem {
   id: PageId
@@ -29,6 +28,7 @@ const navItems: NavItem[] = [
   { id: 'convert', label: '转换', icon: ArrowLeftRight },
   { id: 'table', label: '表格', icon: TableProperties },
   { id: 'tts', label: '语音合成', icon: AudioLines },
+  { id: 'characters', label: '角色配置', icon: Users },
   { id: 'check', label: '检查', icon: ClipboardCheck },
   { id: 'project', label: '工程', icon: FolderKanban },
 ]
@@ -70,7 +70,6 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
   const { active, onNavigate } = props
   const theme = useThemeStore((s) => s.theme)
   const toggleTheme = useThemeStore((s) => s.toggleTheme)
-  const openSettings = useUiStore((s) => s.openSettings)
   const openProjectFile = useWorkspaceStore((s) => s.openProjectFile)
   const saveProjectFile = useWorkspaceStore((s) => s.saveProjectFile)
 
@@ -123,7 +122,6 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
           icon={theme === 'dark' ? <Sun size={15} strokeWidth={1.8} /> : <Moon size={15} strokeWidth={1.8} />}
           label={theme === 'dark' ? '切换浅色' : '切换深色'}
         />
-        <Item onClick={openSettings} icon={<Settings size={15} strokeWidth={1.8} />} label="设置" />
         <Item
           onClick={() => window.e2r.openExternal('https://github.com/HaruhiFanClub/Excel2RpyScript')}
           icon={<Info size={15} strokeWidth={1.8} />}

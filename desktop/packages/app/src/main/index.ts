@@ -3,7 +3,8 @@ import { join, dirname } from 'node:path'
 import { writeFile, mkdir, copyFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { resolveTtsConfig, ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
+import { ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
+import { loadCharacters, saveCharacters } from './characters'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
 import { validateFormat } from './format'
 import {
@@ -17,9 +18,6 @@ import {
   IMAGE_EXTS,
   AUDIO_EXTS,
   diffWorkbooks,
-  parseLegacyTtsConfig,
-  serializeTtsConfig,
-  BUILTIN_PRESETS,
   resolveAssetTarget,
   runPipeline,
   writeRpyFiles,
@@ -38,7 +36,6 @@ import type {
   CheckResult,
   ProjectResult,
   DiffResult,
-  TtsConfigResult,
   TtsHealth,
   TtsJobsArgs,
   TtsJobsResult,
@@ -84,7 +81,6 @@ function createWindow(): void {
         ...(process.env['E2R_DEMO'] ? [`--e2r-demo=${process.env['E2R_DEMO']}`] : []),
         ...(process.env['E2R_PAGE'] ? [`--e2r-page=${process.env['E2R_PAGE']}`] : []),
         ...(process.env['E2R_PROJECT'] ? [`--e2r-project=${process.env['E2R_PROJECT']}`] : []),
-        ...(process.env['E2R_TTSCONFIG'] ? [`--e2r-ttsconfig=${process.env['E2R_TTSCONFIG']}`] : []),
         ...(process.env['E2R_UNLINK'] ? ['--e2r-unlink'] : []),
       ],
     },
@@ -116,24 +112,17 @@ function registerIpc(): void {
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
 
-  ipcMain.handle('shell:openExternal', (_e, url: string): void => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
-  })
-
-  ipcMain.handle('dialog:openJson', async (): Promise<string | null> => {
+  // 角色配置「绑定语音」：选参考音频文件
+  ipcMain.handle('dialog:openAudio', async (): Promise<string | null> => {
     const r = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'JSON', extensions: ['json'] }],
+      filters: [{ name: '音频', extensions: AUDIO_EXTS }],
     })
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
 
-  ipcMain.handle('dialog:saveJson', async (_e, defaultName?: string): Promise<string | null> => {
-    const r = await dialog.showSaveDialog({
-      defaultPath: defaultName ?? 'config.json',
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    })
-    return r.canceled ? null : (r.filePath ?? null)
+  ipcMain.handle('shell:openExternal', (_e, url: string): void => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
   })
 
   ipcMain.handle('dialog:openProject', async (): Promise<string | null> => {
@@ -170,17 +159,16 @@ function registerIpc(): void {
     },
   )
 
-  ipcMain.handle(
-    'tts:saveConfig',
-    async (_e, path: string, config: TtsConfig): Promise<SaveResult> => {
-      try {
-        await writeFile(path, JSON.stringify(serializeTtsConfig(config), null, 2) + '\n', 'utf-8')
-        return { ok: true }
-      } catch (e) {
-        return { ok: false, error: errMsg(e) }
-      }
-    },
-  )
+  // 全局角色配置（单一来源；内置远端角色由主进程叠加并锁定）
+  ipcMain.handle('tts:characters', (): Promise<TtsConfig> => loadCharacters())
+  ipcMain.handle('tts:saveCharacters', async (_e, config: TtsConfig): Promise<SaveResult> => {
+    try {
+      await saveCharacters(config)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
 
   ipcMain.handle('preview', (_e, args: PreviewArgs): Promise<PreviewResult> =>
     previewWorkbook(args),
@@ -303,16 +291,6 @@ function registerIpc(): void {
     return dir
   }
 
-  ipcMain.handle('tts:loadConfig', async (_e, path: string): Promise<TtsConfigResult> => {
-    try {
-      return { ok: true, config: await resolveTtsConfig(path) }
-    } catch (e) {
-      return { ok: false, error: errMsg(e) }
-    }
-  })
-  ipcMain.handle('tts:builtins', (): { id: string; name: string }[] =>
-    BUILTIN_PRESETS.map((p) => ({ id: p.id, name: p.name })),
-  )
   ipcMain.handle('tts:health', (_e, baseUrl: string): Promise<TtsHealth> => ttsHealth(baseUrl))
   ipcMain.handle('tts:engineStart', (e): Promise<EngineStartResult> =>
     engineStart((line) => e.sender.send('tts:engineLog', line)),
@@ -321,7 +299,7 @@ function registerIpc(): void {
   ipcMain.handle('tts:engineStatus', (): EngineStatus => engineStatus())
   ipcMain.handle('tts:jobs', async (_e, args: TtsJobsArgs): Promise<TtsJobsResult> => {
     try {
-      const cfg = args.configPath ? await resolveTtsConfig(args.configPath) : parseLegacyTtsConfig({})
+      const cfg = await loadCharacters()
       const audioDir = audioDirFor(args.xlsxPath)
       const jobs = await enrichedJobs(args.xlsxPath, args.useVoiceText, cfg, args.textLang, audioDir)
       return { ok: true, jobs, audioDir }
@@ -331,16 +309,14 @@ function registerIpc(): void {
   })
   ipcMain.handle('tts:synthesize', async (e, args: TtsSynthArgs): Promise<TtsSynthSummary> => {
     try {
-      const cfg = await resolveTtsConfig(args.configPath)
+      const cfg = await loadCharacters()
       let jobs = await planJobs(args.xlsxPath, args.useVoiceText)
       if (args.only) {
         const set = new Set(args.only)
         jobs = jobs.filter((j) => set.has(j.outputName))
       }
-      // 远端模式：按角色排序，连续同角色跳过切权重（大幅提速）。内嵌不切权重，无需排序。
-      if (cfg.serviceMode === 'remote') {
-        jobs = [...jobs].sort((a, b) => a.roleName.localeCompare(b.roleName))
-      }
+      // 按角色排序：连续同角色跳过切权重（远端大幅提速；内嵌不切权重，排序无副作用）。
+      jobs = [...jobs].sort((a, b) => a.roleName.localeCompare(b.roleName))
       const audioDir = audioDirFor(args.xlsxPath)
       let done = 0
       let failed = 0

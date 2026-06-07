@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AudioLines,
   Play,
   RefreshCw,
   Wand2,
-  Settings2,
   CircleCheck,
   CircleDashed,
   CircleAlert,
   X,
 } from 'lucide-react'
-import type { EnrichedJob, TtsConfig, TtsProgress } from '../../shared/ipc'
+import type { EnrichedJob, TtsProgress } from '../../shared/ipc'
+import { isRoleEnabled, isRemoteRole } from '@e2r/core/tts'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
+import { useCharactersStore } from '../stores/useCharactersStore'
 import { assetUrl } from '../lib/asset'
 
 const LANGS: [string, string][] = [
@@ -29,18 +30,12 @@ type RunState = 'running' | 'done' | 'error'
 
 export default function TtsPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const ttsConfigPath = useWorkspaceStore((s) => s.ttsConfigPath)
-  const setTtsConfigPath = useWorkspaceStore((s) => s.setTtsConfigPath)
+  const config = useCharactersStore((s) => s.config)
 
-  const [config, setConfig] = useState<TtsConfig | null>(null)
   const [health, setHealth] = useState<{ ok: boolean; device?: string; error?: string } | null>(null)
   const [managedUrl, setManagedUrl] = useState<string | null>(null)
   const [engineStarting, setEngineStarting] = useState(false)
-  const [builtins, setBuiltins] = useState<{ id: string; name: string }[]>([])
 
-  useEffect(() => {
-    void window.e2r.ttsBuiltins().then(setBuiltins)
-  }, [])
   const [textLang, setTextLang] = useState('auto')
   const [promptLang, setPromptLang] = useState('auto')
   const [useVoiceText, setUseVoiceText] = useState(false)
@@ -50,41 +45,32 @@ export default function TtsPage() {
   const [progress, setProgress] = useState<Record<string, RunState>>({})
   const [audio, setAudio] = useState<{ url: string; title: string } | null>(null)
 
-  // 加载 TTS 配置 + 健康检查
+  // 启用角色分类：远端（自带模型/端点）/ 内嵌（本地引擎 zero-shot）
+  const roleEntries = config ? Object.entries(config.roleModelMapping) : []
+  const enabledRemote = roleEntries.filter(([, m]) => isRoleEnabled(m) && isRemoteRole(m))
+  const enabledEmbedded = roleEntries.filter(([, m]) => isRoleEnabled(m) && !isRemoteRole(m))
+  const enabledCount = enabledRemote.length + enabledEmbedded.length
+  const remoteEndpoint = enabledRemote[0]?.[1].apiBaseUrl || config?.apiBaseUrl || ''
+
+  // 远端角色：检测端点健康（不展示具体地址）
   useEffect(() => {
-    if (!ttsConfigPath) {
-      setConfig(null)
-      return
-    }
-    window.e2r.ttsLoadConfig(ttsConfigPath).then((r) => {
-      if (r.ok) {
-        setConfig(r.config)
-        setManagedUrl(null)
-        if (r.config.serviceMode === 'remote') {
-          void window.e2r.ttsHealth(r.config.apiBaseUrl).then(setHealth)
-        } else {
-          setHealth(null) // 内嵌：启动引擎后再检测
-        }
-      } else setError(r.error)
-    })
-  }, [ttsConfigPath])
+    if (!config) return
+    if (enabledRemote.length) void window.e2r.ttsHealth(remoteEndpoint).then(setHealth)
+    else setHealth(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config])
 
   const refresh = useCallback(async () => {
     if (!workbookPath) {
       setJobs([])
       return
     }
-    const r = await window.e2r.ttsJobs({
-      xlsxPath: workbookPath,
-      useVoiceText,
-      configPath: ttsConfigPath || undefined,
-      textLang,
-    })
+    const r = await window.e2r.ttsJobs({ xlsxPath: workbookPath, useVoiceText, textLang })
     if (r.ok) {
       setJobs(r.jobs)
       setError(null)
     } else setError(r.error)
-  }, [workbookPath, useVoiceText, ttsConfigPath, textLang])
+  }, [workbookPath, useVoiceText, textLang])
 
   useEffect(() => {
     void refresh()
@@ -95,11 +81,6 @@ export default function TtsPage() {
       setProgress((prev) => ({ ...prev, [p.outputName]: p.status }))
     })
   }, [])
-
-  const pickConfig = useCallback(async () => {
-    const p = await window.e2r.openJson()
-    if (p) setTtsConfigPath(p)
-  }, [setTtsConfigPath])
 
   const startEngine = useCallback(async () => {
     setEngineStarting(true)
@@ -117,19 +98,18 @@ export default function TtsPage() {
 
   const synth = useCallback(
     async (only?: string[]) => {
-      if (!workbookPath || !ttsConfigPath) return
+      if (!workbookPath) return
       setBusy(true)
       setProgress({})
       try {
         const r = await window.e2r.ttsSynthesize({
           xlsxPath: workbookPath,
-          configPath: ttsConfigPath,
           useVoiceText,
           textLang,
           promptLang,
           ...(only ? { only } : {}),
-          // 仅内嵌模式用内置引擎地址覆盖；远端模式必须用配置里的 apiBaseUrl
-          ...(config?.serviceMode === 'embedded' && managedUrl ? { baseUrl: managedUrl } : {}),
+          // 内嵌角色走本地引擎地址；远端角色按各自端点合成（忽略此项）
+          ...(managedUrl ? { baseUrl: managedUrl } : {}),
         })
         if (!r.ok && r.error) setError(r.error)
         await refresh()
@@ -137,7 +117,7 @@ export default function TtsPage() {
         setBusy(false)
       }
     },
-    [workbookPath, ttsConfigPath, useVoiceText, textLang, promptLang, refresh, managedUrl, config],
+    [workbookPath, useVoiceText, textLang, promptLang, refresh, managedUrl],
   )
 
   const audition = (job: EnrichedJob) => {
@@ -156,13 +136,13 @@ export default function TtsPage() {
         <div>
           <h2 className="text-[20px] font-semibold text-app-text">语音合成</h2>
           <p className="mt-1 text-[13px] text-app-muted">
-            按角色切模型、按语音指令取参考音频，批量 / 单句合成并试听
+            按已启用角色合成语音并试听，在「角色配置」页管理角色与语气
           </p>
         </div>
         <button
           type="button"
           onClick={() => synth()}
-          disabled={!workbookPath || !ttsConfigPath || busy || jobs.length === 0}
+          disabled={!workbookPath || busy || jobs.length === 0}
           className="flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-4 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
         >
           {busy ? <span className="spinner" /> : <Wand2 size={14} />} 合成全部
@@ -171,70 +151,37 @@ export default function TtsPage() {
 
       {/* 配置条 */}
       <section className="glass-card mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-[12px]">
-        <span className="flex items-center gap-1.5">
-          <Settings2 size={13} className="text-app-muted" />
-          <select
-            value={ttsConfigPath.startsWith('builtin:') ? ttsConfigPath : ttsConfigPath ? '__file__' : ''}
-            onChange={(e) => {
-              const v = e.target.value
-              if (v === '__file__') void pickConfig()
-              else setTtsConfigPath(v)
-            }}
-            className="rounded-md border border-app-border bg-white/50 px-2 py-1 text-[12px] text-app-text dark:bg-zinc-800/50"
-          >
-            <option value="" disabled>
-              选择预设…
-            </option>
-            {builtins.map((b) => (
-              <option key={b.id} value={`builtin:${b.id}`}>
-                {b.name}
-              </option>
-            ))}
-            <option value="__file__">从文件…（config.json）</option>
-          </select>
-          {ttsConfigPath && !ttsConfigPath.startsWith('builtin:') && (
-            <span className="max-w-[160px] truncate font-mono text-app-muted" title={ttsConfigPath}>
-              {ttsConfigPath.split('/').pop()}
-            </span>
-          )}
+        <span className="text-app-muted">
+          已启用角色 <span className="text-app-text">{enabledCount}</span>
+          {enabledRemote.length > 0 && <span className="ml-1">· 远端 {enabledRemote.length}</span>}
+          {enabledEmbedded.length > 0 && <span className="ml-1">· 内嵌 {enabledEmbedded.length}</span>}
         </span>
 
-        {config && (
-          <>
-            <span className="rounded-full bg-sky-400/12 px-2 py-0.5 text-sky-600 dark:text-sky-300">
-              {config.serviceMode === 'embedded' ? '内嵌 zero-shot' : '远端服务'}
-            </span>
-            {config.serviceMode === 'embedded' ? (
-              <button
-                type="button"
-                onClick={startEngine}
-                disabled={engineStarting || !!managedUrl}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 font-medium text-app-text hover:bg-white/70 disabled:opacity-60 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
-              >
-                {engineStarting ? <span className="spinner" /> : <Wand2 size={13} />}
-                {managedUrl ? '内置引擎已启动' : engineStarting ? '启动中…' : '启动内置引擎'}
-              </button>
-            ) : (
-              <span className="font-mono text-app-muted">{config.apiBaseUrl}</span>
-            )}
-            {health && (
-              <span
-                className={`flex items-center gap-1 rounded-full px-2 py-0.5 ${
-                  health.ok
-                    ? 'bg-emerald-400/15 text-emerald-600 dark:text-emerald-300'
-                    : 'bg-rose-500/12 text-rose-600 dark:text-rose-300'
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${health.ok ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                {health.ok ? `引擎在线${health.device ? ` · ${health.device}` : ''}` : '引擎离线'}
-              </span>
-            )}
-            <span className="text-app-muted">
-              角色 {Object.keys(config.roleModelMapping).length} · 指令{' '}
-              {Object.keys(config.voiceCmdMapping).length}
-            </span>
-          </>
+        {enabledEmbedded.length > 0 && (
+          <button
+            type="button"
+            onClick={startEngine}
+            disabled={engineStarting || !!managedUrl}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/40 px-3 font-medium text-app-text hover:bg-white/70 disabled:opacity-60 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+          >
+            {engineStarting ? <span className="spinner" /> : <Wand2 size={13} />}
+            {managedUrl ? '内置引擎已启动' : engineStarting ? '启动中…' : '启动内置引擎'}
+          </button>
         )}
+
+        {health && (enabledRemote.length > 0 || managedUrl) && (
+          <span
+            className={`flex items-center gap-1 rounded-full px-2 py-0.5 ${
+              health.ok
+                ? 'bg-emerald-400/15 text-emerald-600 dark:text-emerald-300'
+                : 'bg-rose-500/12 text-rose-600 dark:text-rose-300'
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${health.ok ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            {health.ok ? `引擎在线${health.device ? ` · ${health.device}` : ''}` : '引擎离线'}
+          </span>
+        )}
+
         <span className="ml-auto flex items-center gap-2">
           <label className="text-app-muted">文本语言</label>
           <Select value={textLang} onChange={setTextLang} />
@@ -307,7 +254,7 @@ export default function TtsPage() {
                         )}
                         <button
                           onClick={() => synth([j.outputName])}
-                          disabled={busy || !ttsConfigPath}
+                          disabled={busy}
                           className="rounded-md px-1.5 py-0.5 text-app-muted hover:bg-black/5 hover:text-app-text disabled:opacity-40 dark:hover:bg-white/5"
                           title="重新合成"
                         >

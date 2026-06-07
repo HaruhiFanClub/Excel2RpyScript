@@ -12,14 +12,16 @@ import {
 import { FileSpreadsheet, TableProperties, Save, RotateCcw, X, MoveHorizontal } from 'lucide-react'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
-import type { TtsConfig } from '@e2r/core/tts'
+import { enabledRoleNames, tonesForRole, isRoleEnabled } from '@e2r/core/tts'
 import type { CellEdit } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
+import { useCharactersStore } from '../stores/useCharactersStore'
 import {
   SpriteSlotCell,
   BgCell,
   AudioCell,
   VoiceCmdCell,
+  DatalistEditor,
   type GridContext,
 } from '../components/cellRenderers'
 import { SpritePositionsModal } from '../components/SpritePositionsModal'
@@ -61,23 +63,13 @@ const SPRITE_SUB: { field: string; header: string }[] = [
 ]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
 
-// 第一列角色名 → 角色 key（直配或别名）
-function resolveRoleKey(cfg: TtsConfig, name: string): string {
-  if (cfg.roleModelMapping[name]) return name
-  for (const [k, v] of Object.entries(cfg.roleModelMapping)) {
-    if (v.aliases?.includes(name)) return k
-  }
-  return name
-}
-
 export default function TablePage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const assets = useWorkspaceStore((s) => s.assets)
   const setAssets = useWorkspaceStore((s) => s.setAssets)
-  const ttsConfigPath = useWorkspaceStore((s) => s.ttsConfigPath)
+  const ttsConfig = useCharactersStore((s) => s.config)
   const spritePositions = useWorkspaceStore((s) => s.spritePositions)
   const setSpritePositions = useWorkspaceStore((s) => s.setSpritePositions)
-  const [ttsConfig, setTtsConfig] = useState<TtsConfig | null>(null)
   const [posOpen, setPosOpen] = useState(false)
 
   const [data, setData] = useState<TableData | null>(null)
@@ -120,15 +112,6 @@ export default function TablePage() {
     }
   }, [workbookPath, reloadKey])
 
-  // 载入 TTS 配置（用于语音指令下拉与语气显示）
-  useEffect(() => {
-    if (!ttsConfigPath) {
-      setTtsConfig(null)
-      return
-    }
-    window.e2r.ttsLoadConfig(ttsConfigPath).then((r) => setTtsConfig(r.ok ? r.config : null))
-  }, [ttsConfigPath])
-
   // 关联工程 / 配置变化后刷新单元格
   useEffect(() => {
     gridApi.current?.refreshCells({ force: true })
@@ -155,6 +138,18 @@ export default function TablePage() {
   )
 
 
+  // 已启用角色名 + 其别名（表格角色列下拉建议）
+  const roleSuggestions = useMemo<string[]>(() => {
+    if (!ttsConfig) return []
+    const out = new Set<string>()
+    for (const [name, m] of Object.entries(ttsConfig.roleModelMapping)) {
+      if (!isRoleEnabled(m)) continue
+      out.add(name)
+      for (const a of m.aliases ?? []) out.add(a)
+    }
+    return [...out]
+  }, [ttsConfig])
+
   const columnDefs = useMemo<ColDef<Row>[]>(() => {
     const defs: ColDef<Row>[] = [
       { headerName: '#', field: '__row', width: 60, pinned: 'left', sortable: false, editable: false, cellClass: 'text-app-muted' },
@@ -171,21 +166,20 @@ export default function TablePage() {
             cellRenderer: SpriteSlotCell,
           })
         }
+      } else if (c.key === 'role_name') {
+        // 角色列：下拉建议=已启用角色（含别名），同时允许自由输入其它说话人
+        defs.push({
+          headerName: c.header,
+          field: c.key,
+          width: c.width,
+          editable: true,
+          tooltipField: c.key,
+          pinned: 'left' as const,
+          cellEditor: DatalistEditor,
+          cellEditorParams: { values: roleSuggestions },
+        })
       } else if (c.key === 'voice_cmd') {
-        const allCmds = ttsConfig ? Object.keys(ttsConfig.voiceCmdMapping) : []
-        // 内嵌模式按行角色过滤语音指令（参考音频按角色分组）；远端模式给全部
-        const valuesForRow = (rowData: Row): string[] => {
-          const cfg = ttsConfig
-          if (!cfg || cfg.serviceMode !== 'embedded') return allCmds
-          // 配置完全未分组时回退全部；一旦有分组则严格按角色（别名两侧都归一）
-          const anyGrouped = allCmds.some((k) => cfg.voiceCmdMapping[k]?.role)
-          if (!anyGrouped) return allCmds
-          const roleKey = resolveRoleKey(cfg, String(rowData['role_name'] ?? ''))
-          return allCmds.filter((k) => {
-            const r = cfg.voiceCmdMapping[k]?.role
-            return r ? resolveRoleKey(cfg, r) === roleKey : false
-          })
-        }
+        // 语音指令列：下拉仅显示该行角色（名称/别名命中）对应的语气，仍允许自由输入
         defs.push({
           headerName: c.header,
           field: c.key,
@@ -193,12 +187,10 @@ export default function TablePage() {
           editable: true,
           tooltipField: c.key,
           cellRenderer: VoiceCmdCell,
-          ...(allCmds.length
-            ? {
-                cellEditor: 'agSelectCellEditor',
-                cellEditorParams: (p: { data?: Row }) => ({ values: valuesForRow(p.data ?? {}) }),
-              }
-            : {}),
+          cellEditor: DatalistEditor,
+          cellEditorParams: (p: { data?: Row }) => ({
+            values: ttsConfig ? tonesForRole(ttsConfig, String(p.data?.['role_name'] ?? '')) : [],
+          }),
         })
       } else {
         defs.push({
@@ -207,14 +199,13 @@ export default function TablePage() {
           width: c.width,
           editable: true,
           tooltipField: c.key,
-          ...(c.key === 'role_name' ? { pinned: 'left' as const } : {}),
           ...(RENDERERS[c.key] ? { cellRenderer: RENDERERS[c.key] } : {}),
           ...(LARGE_TEXT.has(c.key) ? { cellEditor: 'agLargeTextCellEditor', cellEditorPopup: true } : {}),
         })
       }
     }
     return defs
-  }, [ttsConfig])
+  }, [ttsConfig, roleSuggestions])
 
   const defaultColDef = useMemo<ColDef<Row>>(() => ({ resizable: true, sortable: true }), [])
   const rowData = useMemo<Row[]>(

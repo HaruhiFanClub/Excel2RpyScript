@@ -1,4 +1,5 @@
-import type { CustomCellRendererProps } from 'ag-grid-react'
+import { useEffect, useId, useRef } from 'react'
+import type { CustomCellRendererProps, CustomCellEditorProps } from 'ag-grid-react'
 import { Play, Music, Upload } from 'lucide-react'
 import {
   spriteImageName,
@@ -115,6 +116,37 @@ export function VoiceCmdCell(p: CustomCellRendererProps) {
           {tone}
         </span>
       )}
+    </div>
+  )
+}
+
+// 通用「自由输入 + 下拉建议」单元格编辑器（datalist）：
+// 角色列建议=已启用角色（含别名）；语音指令列建议=该行角色对应的语气。两者都仍可自由输入。
+export function DatalistEditor(props: CustomCellEditorProps & { values?: string[] }) {
+  const { value, onValueChange, stopEditing, values = [] } = props
+  const ref = useRef<HTMLInputElement>(null)
+  const listId = useId()
+  useEffect(() => {
+    ref.current?.focus()
+    ref.current?.select()
+  }, [])
+  return (
+    <div className="flex h-full w-full items-center">
+      <input
+        ref={ref}
+        list={listId}
+        value={value ?? ''}
+        onChange={(e) => onValueChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') stopEditing()
+        }}
+        className="h-full w-full bg-transparent px-2 text-[12.5px] text-app-text outline-none"
+      />
+      <datalist id={listId}>
+        {values.map((v) => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
     </div>
   )
 }

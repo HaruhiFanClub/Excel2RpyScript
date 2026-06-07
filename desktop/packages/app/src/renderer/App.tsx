@@ -5,12 +5,13 @@ import ConvertPage from './pages/ConvertPage'
 import TablePage from './pages/TablePage'
 import CheckPage from './pages/CheckPage'
 import TtsPage from './pages/TtsPage'
+import CharactersPage from './pages/CharactersPage'
 import ProjectPage from './pages/ProjectPage'
 import { WorkspaceBar } from './components/WorkspaceBar'
-import { SettingsModal } from './components/SettingsModal'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
+import { useCharactersStore } from './stores/useCharactersStore'
 
-const PAGES: PageId[] = ['convert', 'table', 'tts', 'check', 'project']
+const PAGES: PageId[] = ['convert', 'table', 'tts', 'characters', 'check', 'project']
 
 export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
@@ -19,10 +20,10 @@ export function App(): JSX.Element {
   // 开发钩子 + 恢复上次会话（持久化的关联工程在启动时重新扫描）
   const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
   const linkProject = useWorkspaceStore((s) => s.linkProject)
-  const setTtsConfigPath = useWorkspaceStore((s) => s.setTtsConfigPath)
+  const loadCharacters = useCharactersStore((s) => s.load)
   useEffect(() => {
+    void loadCharacters()
     if (window.e2r.demoFile) setWorkbookPath(window.e2r.demoFile)
-    if (window.e2r.demoTtsConfig) setTtsConfigPath(window.e2r.demoTtsConfig)
     const st = useWorkspaceStore.getState()
     const dir = window.e2r.demoProject ?? (window.e2r.demoUnlink ? '' : st.renpyDir)
     if (dir && !st.assets) void linkProject(dir)
@@ -65,6 +66,7 @@ export function App(): JSX.Element {
                   {page === 'convert' && <ConvertPage />}
                   {page === 'table' && <TablePage />}
                   {page === 'tts' && <TtsPage />}
+                  {page === 'characters' && <CharactersPage />}
                   {page === 'check' && <CheckPage />}
                   {page === 'project' && <ProjectPage />}
                 </div>
@@ -73,8 +75,6 @@ export function App(): JSX.Element {
           </div>
         </div>
       </div>
-
-      <SettingsModal />
     </main>
   )
 }

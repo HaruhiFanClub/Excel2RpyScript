@@ -26,7 +26,6 @@ export type {
   SpritePositions,
 }
 
-export type TtsConfigResult = { ok: true; config: TtsConfig } | { ok: false; error: string }
 export interface TtsHealth {
   ok: boolean
   device?: string
@@ -36,7 +35,6 @@ export interface TtsHealth {
 export interface TtsJobsArgs {
   xlsxPath: string
   useVoiceText: boolean
-  configPath?: string
   textLang: string
 }
 export type TtsJobsResult =
@@ -44,12 +42,11 @@ export type TtsJobsResult =
   | { ok: false; error: string }
 export interface TtsSynthArgs {
   xlsxPath: string
-  configPath: string
   useVoiceText: boolean
   textLang: string
   promptLang: string
   only?: string[] // 限定要合成的 outputName；缺省=全部
-  baseUrl?: string // 覆盖端点（内置引擎）
+  baseUrl?: string // 覆盖端点（内嵌引擎）
 }
 export interface EngineStatus {
   running: boolean
@@ -86,7 +83,6 @@ export interface ProjectManifest {
   version: 1
   workbook: string
   renpyProject?: string
-  ttsConfig?: string
   mode: ConversionMode
   spritePositions?: SpritePositions
 }
@@ -137,8 +133,7 @@ export type ConvertResult =
 export interface E2rApi {
   openXlsx(): Promise<string | null>
   selectDir(): Promise<string | null>
-  openJson(): Promise<string | null>
-  saveJson(defaultName?: string): Promise<string | null>
+  pickAudio(): Promise<string | null>
   openExternal(url: string): void
   openProjectDialog(): Promise<string | null>
   saveProjectDialog(defaultName?: string): Promise<string | null>
@@ -153,9 +148,8 @@ export interface E2rApi {
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
   importAsset(category: 'image' | 'audio', name: string): Promise<ProjectResult>
-  ttsLoadConfig(path: string): Promise<TtsConfigResult>
-  ttsSaveConfig(path: string, config: TtsConfig): Promise<SaveResult>
-  ttsBuiltins(): Promise<{ id: string; name: string }[]>
+  ttsCharacters(): Promise<TtsConfig>
+  ttsSaveCharacters(config: TtsConfig): Promise<SaveResult>
   ttsHealth(baseUrl: string): Promise<TtsHealth>
   ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
   ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>
@@ -172,8 +166,6 @@ export interface E2rApi {
   demoPage: string | null
   /** 开发用：通过 E2R_PROJECT 自动关联工程 */
   demoProject: string | null
-  /** 开发用：通过 E2R_TTSCONFIG 预置 TTS 配置 */
-  demoTtsConfig: string | null
   /** 开发用：通过 E2R_UNLINK 强制不关联工程（跳过持久化重连） */
   demoUnlink: boolean
 }

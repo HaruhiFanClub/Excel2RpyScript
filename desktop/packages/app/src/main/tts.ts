@@ -4,31 +4,16 @@ import { join } from 'node:path'
 import {
   readWorkbook,
   planTtsJobs,
-  parseLegacyTtsConfig,
   ttsJobSignature,
   toneFor,
-  builtinPreset,
+  modelForRole,
+  isRemoteRole,
   type TtsConfig,
   type TtsJob,
   type EnrichedJob,
 } from '@e2r/core'
 
 const MANIFEST = '.e2r-tts.json' // 记录每个 wav 的合成输入签名，用于「未重新生成」检测
-const BUILTIN_PREFIX = 'builtin:'
-
-export async function loadTtsConfig(path: string): Promise<TtsConfig> {
-  return parseLegacyTtsConfig(JSON.parse(await readFile(path, 'utf-8')))
-}
-
-// 统一解析：builtin:<id> 走内置预设，否则读文件
-export async function resolveTtsConfig(path: string): Promise<TtsConfig> {
-  if (path.startsWith(BUILTIN_PREFIX)) {
-    const cfg = builtinPreset(path.slice(BUILTIN_PREFIX.length))
-    if (!cfg) throw new Error(`未知内置预设：${path}`)
-    return cfg
-  }
-  return loadTtsConfig(path)
-}
 
 async function readManifest(audioDir: string): Promise<Record<string, string>> {
   try {
@@ -101,22 +86,13 @@ export interface SynthOptions {
   skipSwitch?: boolean // 与上一句同角色时跳过切权重（批量提速）
 }
 
-// 角色名 → 模型条目（支持「一个模型绑定多个第一列角色名」：aliases）
-export function modelForRole(cfg: TtsConfig, roleName: string) {
-  const direct = cfg.roleModelMapping[roleName]
-  if (direct) return direct
-  for (const m of Object.values(cfg.roleModelMapping)) {
-    if (m.aliases?.includes(roleName)) return m
-  }
-  return undefined
-}
-
-// 合成单个任务（切权重 → POST /tts → 落盘）
+// 合成单个任务（按角色判定：远端切权重 / 内嵌 zero-shot → POST /tts → 落盘）
 export async function synthOne(job: TtsJob, opts: SynthOptions): Promise<void> {
-  const base = opts.baseUrl ?? opts.cfg.apiBaseUrl
-  // 仅远端模式按角色切自定义模型；内嵌 zero-shot 用引擎已加载的基础模型，只靠参考音频克隆
-  const model = opts.cfg.serviceMode === 'remote' ? modelForRole(opts.cfg, job.roleName) : undefined
-  if (model && !opts.skipSwitch) {
+  const model = modelForRole(opts.cfg, job.roleName)
+  const remote = isRemoteRole(model)
+  // 远端角色：走其自定义端点并按角色切自定义模型；内嵌角色：走本地引擎、不切权重、仅靠参考音频克隆。
+  const base = remote ? model.apiBaseUrl || opts.cfg.apiBaseUrl : opts.baseUrl ?? opts.cfg.apiBaseUrl
+  if (remote && !opts.skipSwitch) {
     if (model.gpt) await fetch(`${base}set_gpt_weights?weights_path=${encodeURIComponent(model.gpt)}`)
     if (model.sovits)
       await fetch(`${base}set_sovits_weights?weights_path=${encodeURIComponent(model.sovits)}`)
