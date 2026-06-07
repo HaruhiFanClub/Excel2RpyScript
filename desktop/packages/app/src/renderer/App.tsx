@@ -18,12 +18,12 @@ export function App(): JSX.Element {
   const [page, setPage] = useState<PageId>(initial && PAGES.includes(initial) ? initial : 'convert')
 
   // 开发钩子 + 恢复上次会话（持久化的关联工程在启动时重新扫描）
-  const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
+  const importWorkbook = useWorkspaceStore((s) => s.importWorkbook)
   const linkProject = useWorkspaceStore((s) => s.linkProject)
   const loadCharacters = useCharactersStore((s) => s.load)
   useEffect(() => {
     void loadCharacters()
-    if (window.e2r.demoFile) setWorkbookPath(window.e2r.demoFile)
+    if (window.e2r.demoFile) void importWorkbook(window.e2r.demoFile)
     const st = useWorkspaceStore.getState()
     const dir = window.e2r.demoProject ?? (window.e2r.demoUnlink ? '' : st.renpyDir)
     if (dir && !st.assets) void linkProject(dir)

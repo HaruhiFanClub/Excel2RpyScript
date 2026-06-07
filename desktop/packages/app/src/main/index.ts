@@ -5,6 +5,7 @@ import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
 import { loadCharacters, saveCharacters } from './characters'
+import { importWorkbook } from './workspace'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
 import { validateFormat } from './format'
 import {
@@ -48,6 +49,7 @@ import type {
   FormatResult,
   ProjectManifest,
   ProjectReadResult,
+  WorkspaceImportResult,
 } from '../shared/ipc'
 import { readFile } from 'node:fs/promises'
 
@@ -110,6 +112,16 @@ function registerIpc(): void {
   ipcMain.handle('dialog:selectDir', async (): Promise<string | null> => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+
+  // 导入表格：在 workspace 建同名文件夹 + 复制副本，返回副本路径（后续读写都用副本）
+  ipcMain.handle('workspace:import', async (_e, originalPath: string): Promise<WorkspaceImportResult> => {
+    try {
+      const info = await importWorkbook(originalPath)
+      return { ok: true, dir: info.dir, copyPath: info.copyPath }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
   })
 
   // 角色配置「绑定语音」：选参考音频文件

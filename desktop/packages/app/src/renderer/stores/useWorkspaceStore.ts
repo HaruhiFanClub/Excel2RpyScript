@@ -4,7 +4,8 @@ import type { ConversionMode } from '@e2r/core'
 import type { AssetIndex, SpritePositions } from '../../shared/ipc'
 
 interface WorkspaceState {
-  workbookPath: string
+  workbookPath: string // 当前活动工作簿 = workspace 里的副本（原表只作为导入种子，永不被改）
+  workspaceDir: string // 当前表格的 workspace 文件夹（副本所在目录）
   outputDir: string
   mode: ConversionMode
   assets: AssetIndex | null // 关联的 Ren'Py 工程资源索引（不持久化，启动时按 renpyDir 重扫）
@@ -12,6 +13,7 @@ interface WorkspaceState {
   currentProjectPath: string | null // 当前 .e2rproj 工程文件
   spritePositions: SpritePositions // 每角色 左/中/右 自定义位置 token
   setWorkbookPath: (p: string) => void
+  importWorkbook: (originalPath: string) => Promise<void> // 导入原表 → 建副本 → 切到副本
   setOutputDir: (p: string) => void
   setMode: (m: ConversionMode) => void
   setSpritePositions: (s: SpritePositions) => void
@@ -26,6 +28,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set, get) => ({
       workbookPath: '',
+      workspaceDir: '',
       outputDir: '',
       mode: 'default',
       assets: null,
@@ -33,6 +36,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       currentProjectPath: null,
       spritePositions: {},
       setWorkbookPath: (workbookPath) => set({ workbookPath }),
+      importWorkbook: async (originalPath) => {
+        if (!originalPath) {
+          set({ workbookPath: '', workspaceDir: '' })
+          return
+        }
+        const r = await window.e2r.workspaceImport(originalPath)
+        if (r.ok) set({ workbookPath: r.copyPath, workspaceDir: r.dir })
+        else set({ workbookPath: originalPath }) // 兜底：导入失败仍可用原表
+      },
       setOutputDir: (outputDir) => set({ outputDir }),
       setMode: (mode) => set({ mode }),
       setSpritePositions: (spritePositions) => set({ spritePositions }),
@@ -57,6 +69,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const m = r.manifest
         set({
           workbookPath: m.workbook,
+          workspaceDir: m.workbook.replace(/[\\/][^\\/]*$/, ''), // 副本所在目录
           mode: m.mode,
           spritePositions: m.spritePositions ?? {},
           currentProjectPath: path,
@@ -89,6 +102,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       name: 'e2r-workspace',
       partialize: (s) => ({
         workbookPath: s.workbookPath,
+        workspaceDir: s.workspaceDir,
         outputDir: s.outputDir,
         mode: s.mode,
         renpyDir: s.renpyDir,

@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 // 共享工作区栏：一处选工作簿 + 关联工程，三页共用，避免重复
 export function WorkspaceBar() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const setWorkbookPath = useWorkspaceStore((s) => s.setWorkbookPath)
+  const importWorkbook = useWorkspaceStore((s) => s.importWorkbook)
   const assets = useWorkspaceStore((s) => s.assets)
   const linkProject = useWorkspaceStore((s) => s.linkProject)
   const clearProject = useWorkspaceStore((s) => s.clearProject)
@@ -41,7 +41,7 @@ export function WorkspaceBar() {
       <div className="min-w-0 max-w-[560px] flex-1">
         <PathPicker
           value={workbookPath}
-          onChange={setWorkbookPath}
+          onChange={(p) => void importWorkbook(p)}
           mode="file"
           placeholder="拖入或选择 .xlsx / .xls 文件…"
           ariaLabel="工作簿"

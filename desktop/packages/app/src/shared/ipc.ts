@@ -89,6 +89,11 @@ export interface ProjectManifest {
 export type ProjectReadResult =
   | { ok: true; manifest: ProjectManifest }
   | { ok: false; error: string }
+
+// workspace：导入表格后返回的副本位置
+export type WorkspaceImportResult =
+  | { ok: true; dir: string; copyPath: string }
+  | { ok: false; error: string }
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
 export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
@@ -134,6 +139,7 @@ export interface E2rApi {
   openXlsx(): Promise<string | null>
   selectDir(): Promise<string | null>
   pickAudio(): Promise<string | null>
+  workspaceImport(originalPath: string): Promise<WorkspaceImportResult>
   openExternal(url: string): void
   openProjectDialog(): Promise<string | null>
   saveProjectDialog(defaultName?: string): Promise<string | null>

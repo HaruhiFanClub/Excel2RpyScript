@@ -35,6 +35,7 @@ const api: E2rApi = {
   openXlsx: () => ipcRenderer.invoke('dialog:openXlsx'),
   selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
   pickAudio: () => ipcRenderer.invoke('dialog:openAudio'),
+  workspaceImport: (originalPath: string) => ipcRenderer.invoke('workspace:import', originalPath),
   openExternal: (url: string): void => {
     void ipcRenderer.invoke('shell:openExternal', url)
   },
