@@ -4,7 +4,6 @@ import {
   AudioLines,
   Users,
   ClipboardCheck,
-  FolderKanban,
   Moon,
   Sun,
   Info,
@@ -13,7 +12,7 @@ import {
 import { useThemeStore } from '../stores/useThemeStore'
 import appIcon from '../assets/app-icon.png'
 
-export type PageId = 'convert' | 'table' | 'tts' | 'characters' | 'check' | 'project'
+export type PageId = 'convert' | 'table' | 'tts' | 'characters' | 'check'
 
 interface NavItem {
   id: PageId
@@ -28,7 +27,6 @@ const navItems: NavItem[] = [
   { id: 'tts', label: '语音合成', icon: AudioLines },
   { id: 'characters', label: '角色配置', icon: Users },
   { id: 'check', label: '检查', icon: ClipboardCheck },
-  { id: 'project', label: '工程', icon: FolderKanban },
 ]
 
 function Item(props: {

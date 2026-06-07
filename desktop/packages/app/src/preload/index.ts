@@ -2,8 +2,6 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   CellEdit,
   CheckResult,
-  DeployArgs,
-  DeployResult,
   DiffResult,
   EngineStartResult,
   EngineStatus,
@@ -82,7 +80,6 @@ const api: E2rApi = {
     ipcRenderer.on('tts:engineLog', handler)
     return () => ipcRenderer.removeListener('tts:engineLog', handler)
   },
-  deploy: (args: DeployArgs): Promise<DeployResult> => ipcRenderer.invoke('project:deploy', args),
   pathForFile: (file: File): string => {
     try {
       return webUtils.getPathForFile(file)

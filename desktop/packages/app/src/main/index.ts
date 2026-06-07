@@ -20,8 +20,6 @@ import {
   AUDIO_EXTS,
   diffWorkbooks,
   resolveAssetTarget,
-  runPipeline,
-  writeRpyFiles,
   type CellEdit,
   type TtsConfig,
 } from '@e2r/core'
@@ -45,8 +43,6 @@ import type {
   TtsApplyResult,
   TtsSynthArgs,
   TtsSynthSummary,
-  DeployArgs,
-  DeployResult,
   EngineStartResult,
   EngineStatus,
   FormatResult,
@@ -334,34 +330,6 @@ function registerIpc(): void {
       }
     },
   )
-
-  // ---- 部署到 Ren'Py ----
-  ipcMain.handle('project:deploy', async (_e, args: DeployArgs): Promise<DeployResult> => {
-    try {
-      if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
-      const { sheets } = await readWorkbook(args.xlsxPath)
-      const written: string[] = []
-      if (args.scripts) {
-        const { files } = runPipeline(sheets, {
-          mode: 'default',
-          normalizeMode: true,
-          trimRoleNames: true,
-        })
-        await writeRpyFiles(linkedGamePath, files)
-        written.push(...files.map((f) => `${f.label}.rpy`))
-      }
-      if (args.enableVoice) {
-        await writeFile(
-          join(linkedGamePath, 'e2r_config.rpy'),
-          '# 由 Excel2Rpy 生成：启用语音\ndefine config.has_voice = True\n',
-        )
-        written.push('e2r_config.rpy')
-      }
-      return { ok: true, gamePath: linkedGamePath, written }
-    } catch (e) {
-      return { ok: false, error: errMsg(e) }
-    }
-  })
 
   // ---- TTS ----
   // 当前表的语音目录：pending（临时/已生成，放系统临时区）+ voice（已应用，workspace/<表>/voice）。

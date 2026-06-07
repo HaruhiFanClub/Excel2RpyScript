@@ -6,12 +6,11 @@ import TablePage from './pages/TablePage'
 import CheckPage from './pages/CheckPage'
 import TtsPage from './pages/TtsPage'
 import CharactersPage from './pages/CharactersPage'
-import ProjectPage from './pages/ProjectPage'
 import { WorkspaceBar } from './components/WorkspaceBar'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 import { useCharactersStore } from './stores/useCharactersStore'
 
-const PAGES: PageId[] = ['convert', 'table', 'tts', 'characters', 'check', 'project']
+const PAGES: PageId[] = ['convert', 'table', 'tts', 'characters', 'check']
 
 export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
@@ -85,7 +84,6 @@ export function App(): JSX.Element {
                       {page === 'tts' && <TtsPage />}
                       {page === 'characters' && <CharactersPage />}
                       {page === 'check' && <CheckPage />}
-                      {page === 'project' && <ProjectPage />}
                     </div>
                   </motion.div>
                 )}

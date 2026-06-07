@@ -68,15 +68,6 @@ export interface TtsSynthSummary {
   error?: string
 }
 
-export interface DeployArgs {
-  xlsxPath: string
-  scripts: boolean // 写 .rpy 到 game/
-  enableVoice: boolean // 写 e2r_config.rpy 启用 config.has_voice
-}
-export type DeployResult =
-  | { ok: true; gamePath: string; written: string[] }
-  | { ok: false; error: string }
-
 // workspace：导入表格后返回的副本位置
 export type WorkspaceImportResult =
   | { ok: true; dir: string; copyPath: string }
@@ -157,7 +148,6 @@ export interface E2rApi {
   ttsEngineStop(): Promise<void>
   ttsEngineStatus(): Promise<EngineStatus>
   onEngineLog(cb: (line: string) => void): () => void
-  deploy(args: DeployArgs): Promise<DeployResult>
   pathForFile(file: File): string
   /** 开发用：通过 E2R_DEMO 自动载入一个表格（自动化截图/验证） */
   demoFile: string | null
