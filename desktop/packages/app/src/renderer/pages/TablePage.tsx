@@ -153,23 +153,23 @@ export default function TablePage() {
           })
         }
       } else if (c.key === 'role_name') {
-        // 角色列：下拉按钮选择（已启用角色含别名）或在下拉里输入自定义值。
-        // 不可双击编辑（避免双击下拉按钮卡进退不出的编辑态），改值统一走下拉。
+        // 角色列：双击单元格可自由输入；选中/悬浮出现下拉按钮（已启用角色含别名，或下拉里输入自定义值）。
+        // 双击「下拉按钮」由 ComboCell 用原生监听拦下，不会误触发编辑。
         defs.push({
           headerName: c.header,
           field: c.key,
           width: c.width,
-          editable: false,
+          editable: true,
           pinned: 'left' as const,
           cellRenderer: ComboCell,
         })
       } else if (c.key === 'voice_cmd') {
-        // 语音指令列：下拉仅显示该行角色对应的语气，或在下拉里输入自定义值；同样不可双击编辑
+        // 语音指令列：双击单元格可自由输入；下拉仅显示该行角色对应的语气（或下拉里输入自定义值）
         defs.push({
           headerName: c.header,
           field: c.key,
           width: c.width,
-          editable: false,
+          editable: true,
           cellRenderer: ComboCell,
         })
       } else {

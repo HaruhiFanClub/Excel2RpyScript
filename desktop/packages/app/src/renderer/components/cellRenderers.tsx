@@ -135,7 +135,21 @@ export function ComboCell(p: CustomCellRendererProps) {
     field === 'voice_cmd' && ctx.ttsConfig ? (o: string) => toneFor(ctx.ttsConfig!, o) : undefined
   const tone = toneOf && value ? toneOf(value) : ''
 
-  // 通过 node.setDataValue 写回（列设为不可编辑，避免双击进入卡死的编辑态；此 API 仍可改值并触发跟踪）
+  // 用「原生」dblclick 监听拦下下拉按钮上的双击：它在按钮本身（target）触发，
+  // 早于 AG Grid 绑在祖先上的原生 dblclick（即「双击进入编辑」），从而只阻止按钮的双击、
+  // 不影响双击单元格其它区域进入编辑。React 的 onDoubleClick 走根节点委托太晚，拦不住。
+  useEffect(() => {
+    const el = btnRef.current
+    if (!el) return
+    const stop = (e: Event) => e.stopPropagation()
+    el.addEventListener('dblclick', stop)
+    el.addEventListener('mousedown', stop)
+    return () => {
+      el.removeEventListener('dblclick', stop)
+      el.removeEventListener('mousedown', stop)
+    }
+  }, [])
+
   const choose = (v: string) => {
     p.node?.setDataValue?.(field, v)
     setOpen(false)
