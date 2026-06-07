@@ -202,3 +202,11 @@ body {
 .ag-cell-focus .e2r-asset-action {
   opacity: 1;
 }
+
+.e2r-selected-row .ag-cell {
+  background: rgb(14 165 233 / 0.08) !important;
+}
+
+.dark .e2r-selected-row .ag-cell {
+  background: rgb(56 189 248 / 0.12) !important;
+}

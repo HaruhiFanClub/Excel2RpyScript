@@ -61,7 +61,9 @@ export default function ConvertPage() {
         target = latest.files[index] ?? file
       }
       const r =
-        action === 'export' ? await window.e2r.exportRpyFile(target) : await window.e2r.applyRpyFile(target)
+        action === 'export'
+          ? await window.e2r.exportRpyFile(target)
+          : await window.e2r.applyRpyFile(target, workbookPath, sheetName)
       if (r.ok) {
         setDone((prev) => ({
           ...prev,
@@ -91,7 +93,7 @@ export default function ConvertPage() {
           setError(`未找到 sheet "${sheetName}" 对应的脚本`)
           break
         }
-        const r = await window.e2r.applyRpyFile(file)
+        const r = await window.e2r.applyRpyFile(file, workbookPath, sheetName)
         if (r.ok) {
           applied.push(sheetName)
           setDone((prev) => ({ ...prev, [fileKey(file, index)]: `已应用：${r.path}` }))

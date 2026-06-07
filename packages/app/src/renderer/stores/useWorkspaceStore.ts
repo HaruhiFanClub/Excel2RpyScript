@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { TableData } from '@e2r/core/table'
-import type { AssetIndex, CellEdit, PreviewData } from '../../shared/ipc'
+import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
+import type { AssetIndex, CellEdit, PreviewData, TableRowOperation } from '../../shared/ipc'
 
 let convertSeq = 0
 let tableReadSeq = 0
@@ -35,6 +35,7 @@ interface WorkspaceState {
   runConvert: (workbookPath?: string) => Promise<PreviewData | null>
   loadTableData: (workbookPath?: string, opts?: { force?: boolean }) => Promise<TableData | null>
   applyTableEditsToCache: (edits: CellEdit[], workbookPath?: string) => void
+  applyTableRowOpsToCache: (ops: TableRowOperation[], workbookPath?: string) => void
   markSheetChanges: (sheetNames: string[], workbookPath?: string) => void
   clearSheetChanges: (sheetNames?: string[], workbookPath?: string) => void
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
@@ -234,6 +235,45 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               for (const edit of rowEdits) cells[edit.col] = edit.value
               return { ...row, cells }
             })
+            return { ...sheet, rows }
+          })
+
+          return changed ? { tableData: { sheets } } : {}
+        })
+      },
+      applyTableRowOpsToCache: (ops, workbookPath) => {
+        if (ops.length === 0) return
+        const targetWorkbook = workbookPath ?? get().workbookPath
+        set((state) => {
+          if (!state.tableData || state.tableWorkbookPath !== targetWorkbook) return {}
+
+          const opsBySheet = new Map<string, TableRowOperation[]>()
+          for (const op of ops) {
+            const sheetOps = opsBySheet.get(op.sheet) ?? []
+            sheetOps.push(op)
+            opsBySheet.set(op.sheet, sheetOps)
+          }
+
+          let changed = false
+          const sheets = state.tableData.sheets.map((sheet) => {
+            const sheetOps = opsBySheet.get(sheet.name)
+            if (!sheetOps?.length) return sheet
+            let rows = sheet.rows.map((row) => ({ ...row, cells: { ...row.cells } }))
+            for (const op of sheetOps) {
+              changed = true
+              if (op.type === 'insert-row') {
+                const cells: Record<string, string> = {}
+                for (const col of TABLE_COLUMNS) cells[col.key] = op.values?.[col.key] ?? ''
+                rows = rows
+                  .map((row) => (row.excelRow >= op.excelRow ? { ...row, excelRow: row.excelRow + 1 } : row))
+                  .concat({ excelRow: op.excelRow, cells })
+                  .sort((a, b) => a.excelRow - b.excelRow)
+              } else {
+                rows = rows
+                  .filter((row) => row.excelRow !== op.excelRow)
+                  .map((row) => (row.excelRow > op.excelRow ? { ...row, excelRow: row.excelRow - 1 } : row))
+              }
+            }
             return { ...sheet, rows }
           })
 

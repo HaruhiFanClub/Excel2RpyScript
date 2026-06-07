@@ -22,6 +22,8 @@ export interface TtsJob {
   outputName: string // {role}_sheet{sheetIndex+1}_row{rowIndex+8}_synthesized.wav
 }
 
+export type TtsAudioRenamePlan = Record<string, Record<string, string>> // sheetName -> oldName -> newName
+
 
 // 带 UI 状态的任务：tone=语气
 // status：missing 未生成 / generated 已生成(临时,可试听,未落实) / applied 已应用(已复制进 workspace)
@@ -60,6 +62,39 @@ export function planTtsJobs(sheets: ParsedSheet[], excelRows?: number[][]): TtsJ
     })
   })
   return jobs
+}
+
+function audioRenameKey(job: TtsJob): string {
+  return [
+    job.roleName,
+    job.voiceCmd,
+    job.dialogueText,
+    job.voiceText,
+    job.text,
+  ].join('\u0000')
+}
+
+// 保存表格后，行号变化会导致 outputName 变化。按 sheet 内的任务内容顺序匹配旧/新任务，
+// 只为仍然是同一句、同角色、同语气的任务生成文件改名计划。
+export function planTtsAudioRenames(before: TtsJob[], after: TtsJob[]): TtsAudioRenamePlan {
+  const oldBySheetAndKey = new Map<string, TtsJob[]>()
+  for (const job of before) {
+    const key = `${job.sheetName}\u0000${audioRenameKey(job)}`
+    const queue = oldBySheetAndKey.get(key) ?? []
+    queue.push(job)
+    oldBySheetAndKey.set(key, queue)
+  }
+
+  const plan: TtsAudioRenamePlan = {}
+  for (const job of after) {
+    const key = `${job.sheetName}\u0000${audioRenameKey(job)}`
+    const previous = oldBySheetAndKey.get(key)?.shift()
+    if (!previous || previous.outputName === job.outputName) continue
+    const sheetMap = plan[job.sheetName] ?? {}
+    sheetMap[previous.outputName] = job.outputName
+    plan[job.sheetName] = sheetMap
+  }
+  return plan
 }
 
 // ---- 配置（统一的角色配置） ----

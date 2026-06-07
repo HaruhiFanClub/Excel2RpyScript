@@ -3,6 +3,8 @@ import type {
   ConvertWarning,
   TableData,
   CellEdit,
+  TableChange,
+  TableRowOperation,
   CheckIssue,
   AssetIndex,
   DiffReport,
@@ -14,6 +16,8 @@ import type {
 
 export type {
   CellEdit,
+  TableChange,
+  TableRowOperation,
   CheckIssue,
   AssetIndex,
   DiffReport,
@@ -141,11 +145,11 @@ export interface E2rApi {
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
   exportRpyFile(file: RpyFile): Promise<RpyFileWriteResult>
-  applyRpyFile(file: RpyFile): Promise<RpyFileWriteResult>
+  applyRpyFile(file: RpyFile, xlsxPath?: string, sheetName?: string): Promise<RpyFileWriteResult>
   validateFormat(xlsxPath: string): Promise<FormatResult>
   readTable(xlsxPath: string): Promise<TableResult>
-  saveTable(xlsxPath: string, edits: CellEdit[]): Promise<SaveResult>
-  saveTableAs(xlsxPath: string, edits: CellEdit[]): Promise<SaveAsResult>
+  saveTable(xlsxPath: string, changes: TableChange[]): Promise<SaveResult>
+  saveTableAs(xlsxPath: string, changes: TableChange[]): Promise<SaveAsResult>
   check(xlsxPath: string): Promise<CheckResult>
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>

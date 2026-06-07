@@ -3,7 +3,16 @@ import { join, dirname, basename, extname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { writeFile, mkdir, copyFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { ttsHealth, planJobs, synthOne, enrichedJobs, applyVoices } from './tts'
+import {
+  ttsHealth,
+  planJobs,
+  synthOne,
+  enrichedJobs,
+  applyVoices,
+  applyWorkspaceAudioRenames,
+  queueAudioRenamesForProject,
+  applyProjectAudioRenamesForSheet,
+} from './tts'
 import { loadCharacters, saveCharacters } from './characters'
 import { importWorkbook, pendingDirFor, workspaceSub, type WsType } from './workspace'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
@@ -11,7 +20,7 @@ import { validateFormat } from './format'
 import { checkForUpdates } from './update'
 import {
   readTable,
-  saveTableEdits,
+  saveTableChanges,
   readWorkbook,
   checkSheets,
   summarize,
@@ -21,7 +30,8 @@ import {
   AUDIO_EXTS,
   diffWorkbooks,
   resolveAssetTarget,
-  type CellEdit,
+  planTtsAudioRenames,
+  type TableChange,
   type TtsConfig,
 } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
@@ -93,6 +103,16 @@ function rpyFileName(label: string): string {
 
 async function writeRpyFile(path: string, file: RpyFile): Promise<void> {
   await writeFile(path, Buffer.from(file.content, 'utf-8'))
+}
+
+async function saveTableWithAudioRenames(xlsxPath: string, changes: TableChange[]): Promise<void> {
+  if (changes.length === 0) return
+  const before = await planJobs(xlsxPath)
+  await saveTableChanges(xlsxPath, changes)
+  const after = await planJobs(xlsxPath)
+  const plan = planTtsAudioRenames(before, after)
+  await applyWorkspaceAudioRenames(xlsxPath, plan)
+  await queueAudioRenamesForProject(xlsxPath, plan)
 }
 
 function ensureRpyPath(path: string): string {
@@ -219,16 +239,22 @@ function registerIpc(): void {
       return { ok: false, error: errMsg(e) }
     }
   })
-  ipcMain.handle('rpy:apply', async (_e, file: RpyFile): Promise<RpyFileWriteResult> => {
-    try {
-      if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
-      const target = join(linkedGamePath, rpyFileName(file.label))
-      await writeRpyFile(target, file)
-      return { ok: true, path: target }
-    } catch (e) {
-      return { ok: false, error: errMsg(e) }
-    }
-  })
+  ipcMain.handle(
+    'rpy:apply',
+    async (_e, file: RpyFile, xlsxPath?: string, sheetName?: string): Promise<RpyFileWriteResult> => {
+      try {
+        if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
+        const target = join(linkedGamePath, rpyFileName(file.label))
+        await writeRpyFile(target, file)
+        if (xlsxPath && sheetName) {
+          await applyProjectAudioRenamesForSheet(xlsxPath, sheetName, gameAudioDir())
+        }
+        return { ok: true, path: target }
+      } catch (e) {
+        return { ok: false, error: errMsg(e) }
+      }
+    },
+  )
   ipcMain.handle('format:validate', (_e, xlsxPath: string): Promise<FormatResult> =>
     validateFormat(xlsxPath),
   )
@@ -242,9 +268,9 @@ function registerIpc(): void {
   })
   ipcMain.handle(
     'table:save',
-    async (_e, xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> => {
+    async (_e, xlsxPath: string, changes: TableChange[]): Promise<SaveResult> => {
       try {
-        await saveTableEdits(xlsxPath, edits)
+        await saveTableWithAudioRenames(xlsxPath, changes)
         return { ok: true }
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -253,7 +279,7 @@ function registerIpc(): void {
   )
   ipcMain.handle(
     'table:saveAs',
-    async (_e, xlsxPath: string, edits: CellEdit[]): Promise<SaveAsResult> => {
+    async (_e, xlsxPath: string, changes: TableChange[]): Promise<SaveAsResult> => {
       try {
         const r = await dialog.showSaveDialog({
           defaultPath: xlsxFileName(xlsxPath),
@@ -261,7 +287,7 @@ function registerIpc(): void {
         })
         if (r.canceled || !r.filePath) return { ok: false, error: '' }
         const target = ensureXlsxPath(r.filePath)
-        await saveTableEdits(xlsxPath, edits)
+        await saveTableWithAudioRenames(xlsxPath, changes)
         if (target !== xlsxPath) await copyFile(xlsxPath, target)
         return { ok: true, path: target }
       } catch (e) {

@@ -1,6 +1,7 @@
 // TTS 客户端（主进程）：对接配置的 GPT-SoVITS HTTP 端点，复刻 handler/tts.py 的合成流程。
-import { writeFile, mkdir, readFile, readdir, copyFile, access } from 'node:fs/promises'
-import { join } from 'node:path'
+import { writeFile, mkdir, readFile, readdir, copyFile, access, rename, rm } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import {
   planTtsJobs,
   ttsJobSignature,
@@ -9,15 +10,20 @@ import {
   isRemoteRole,
   type TtsConfig,
   type TtsJob,
+  type TtsAudioRenamePlan,
   type EnrichedJob,
   readRawWorkbook,
   parseSheetRows,
   truthy,
   EXCEL_PARSE_START_ROW,
 } from '@e2r/core'
+import { pendingDirFor, workspaceSub } from './workspace'
 
 const MANIFEST = '.e2r-tts.json' // pending 目录：记录每个已生成 wav 的合成输入签名
 const APPLIED = '.e2r-applied.json' // voice 目录：记录每个已应用 wav 的签名（落实时刻的输入）
+const PROJECT_RENAMES = '.e2r-audio-renames.json' // workspace：待应用到 game/audio 的改名计划
+
+export type AudioRenamePlan = TtsAudioRenamePlan
 
 async function readManifest(dir: string, file = MANIFEST): Promise<Record<string, string>> {
   try {
@@ -25,6 +31,176 @@ async function readManifest(dir: string, file = MANIFEST): Promise<Record<string
   } catch {
     return {}
   }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function safeAudioName(name: string): boolean {
+  return basename(name) === name && name.toLowerCase().endsWith('.wav') && !name.startsWith('.')
+}
+
+function flattenRenamePlan(plan: AudioRenamePlan): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const sheetMap of Object.values(plan)) {
+    for (const [oldName, newName] of Object.entries(sheetMap)) {
+      if (oldName !== newName && safeAudioName(oldName) && safeAudioName(newName)) map[oldName] = newName
+    }
+  }
+  return map
+}
+
+function isEmptyPlan(plan: AudioRenamePlan): boolean {
+  return Object.values(plan).every((sheet) => Object.keys(sheet).length === 0)
+}
+
+async function readProjectRenamePlan(workspaceDir: string): Promise<AudioRenamePlan> {
+  try {
+    const raw = JSON.parse(await readFile(join(workspaceDir, PROJECT_RENAMES), 'utf-8')) as {
+      sheets?: AudioRenamePlan
+    }
+    return raw.sheets ?? {}
+  } catch {
+    return {}
+  }
+}
+
+async function writeProjectRenamePlan(workspaceDir: string, plan: AudioRenamePlan): Promise<void> {
+  const file = join(workspaceDir, PROJECT_RENAMES)
+  if (isEmptyPlan(plan)) {
+    await rm(file, { force: true })
+    return
+  }
+  await writeFile(file, JSON.stringify({ sheets: plan }, null, 2))
+}
+
+function mergeSheetRenamePlan(base: Record<string, string>, incoming: Record<string, string>): Record<string, string> {
+  const next = { ...base }
+  for (const [oldName, newName] of Object.entries(incoming)) {
+    if (oldName === newName) continue
+    let composed = false
+    for (const [source, currentTarget] of Object.entries(next)) {
+      if (currentTarget === oldName) {
+        next[source] = newName
+        composed = true
+      }
+    }
+    if (!composed) next[oldName] = newName
+  }
+  for (const [oldName, newName] of Object.entries(next)) {
+    if (oldName === newName) delete next[oldName]
+  }
+  return next
+}
+
+async function rememberProjectAudioRenames(xlsxPath: string, plan: AudioRenamePlan): Promise<void> {
+  if (isEmptyPlan(plan)) return
+  const workspaceDir = dirname(xlsxPath)
+  const current = await readProjectRenamePlan(workspaceDir)
+  const next: AudioRenamePlan = { ...current }
+  for (const [sheet, sheetMap] of Object.entries(plan)) {
+    const merged = mergeSheetRenamePlan(next[sheet] ?? {}, sheetMap)
+    if (Object.keys(merged).length > 0) next[sheet] = merged
+    else delete next[sheet]
+  }
+  await writeProjectRenamePlan(workspaceDir, next)
+}
+
+async function renameFilesInDir(dir: string, map: Record<string, string>): Promise<{
+  renamed: number
+  applied: Record<string, string>
+}> {
+  if (!(await pathExists(dir))) return { renamed: 0, applied: {} }
+  const moves: { oldName: string; newName: string; temp: string }[] = []
+  let i = 0
+  for (const [oldName, newName] of Object.entries(map)) {
+    const oldPath = join(dir, oldName)
+    if (!(await pathExists(oldPath))) continue
+    const temp = join(dir, `.e2r-renaming-${randomUUID()}-${i++}.tmp`)
+    await rename(oldPath, temp)
+    moves.push({ oldName, newName, temp })
+  }
+
+  let renamed = 0
+  const applied: Record<string, string> = {}
+  for (const move of moves) {
+    const target = join(dir, move.newName)
+    if (await pathExists(target)) {
+      await rm(move.temp, { force: true })
+      continue
+    }
+    await rename(move.temp, target)
+    applied[move.oldName] = move.newName
+    renamed++
+  }
+  return { renamed, applied }
+}
+
+function renameManifestKeys(manifest: Record<string, string>, map: Record<string, string>): Record<string, string> | null {
+  const next = { ...manifest }
+  const moved: [string, string][] = []
+  let changed = false
+  for (const [oldName, newName] of Object.entries(map)) {
+    if (!Object.prototype.hasOwnProperty.call(next, oldName)) continue
+    moved.push([newName, next[oldName] ?? ''])
+    delete next[oldName]
+    changed = true
+  }
+  for (const [newName, sig] of moved) {
+    next[newName] = sig
+  }
+  return changed ? next : null
+}
+
+async function renameAudioDir(
+  dir: string,
+  map: Record<string, string>,
+  manifestFile: string | null,
+): Promise<number> {
+  if (Object.keys(map).length === 0 || !(await pathExists(dir))) return 0
+  const { renamed, applied } = await renameFilesInDir(dir, map)
+  if (manifestFile) {
+    const manifest = await readManifest(dir, manifestFile)
+    const next = renameManifestKeys(manifest, applied)
+    if (next) await writeFile(join(dir, manifestFile), JSON.stringify(next, null, 2))
+  }
+  return renamed
+}
+
+export async function applyWorkspaceAudioRenames(xlsxPath: string, plan: AudioRenamePlan): Promise<void> {
+  const map = flattenRenamePlan(plan)
+  if (Object.keys(map).length === 0) return
+  const workspaceDir = dirname(xlsxPath)
+  await Promise.all([
+    renameAudioDir(pendingDirFor(workspaceDir), map, MANIFEST),
+    renameAudioDir(workspaceSub(workspaceDir, 'voice'), map, APPLIED),
+  ])
+}
+
+export async function queueAudioRenamesForProject(xlsxPath: string, plan: AudioRenamePlan): Promise<void> {
+  await rememberProjectAudioRenames(xlsxPath, plan)
+}
+
+export async function applyProjectAudioRenamesForSheet(
+  xlsxPath: string,
+  sheetName: string,
+  gameAudioDir: string | null,
+): Promise<number> {
+  if (!gameAudioDir) return 0
+  const workspaceDir = dirname(xlsxPath)
+  const plan = await readProjectRenamePlan(workspaceDir)
+  const sheetMap = plan[sheetName]
+  if (!sheetMap || Object.keys(sheetMap).length === 0) return 0
+  const renamed = await renameAudioDir(gameAudioDir, sheetMap, null)
+  delete plan[sheetName]
+  await writeProjectRenamePlan(workspaceDir, plan)
+  return renamed
 }
 
 // 列出任务并标注状态。两段式：

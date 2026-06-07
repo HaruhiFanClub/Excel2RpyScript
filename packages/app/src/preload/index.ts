@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
-  CellEdit,
+  TableChange,
   CheckResult,
   DiffResult,
   EngineStartResult,
@@ -47,14 +47,15 @@ const api: E2rApi = {
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
   exportRpyFile: (file: RpyFile): Promise<RpyFileWriteResult> => ipcRenderer.invoke('rpy:export', file),
-  applyRpyFile: (file: RpyFile): Promise<RpyFileWriteResult> => ipcRenderer.invoke('rpy:apply', file),
+  applyRpyFile: (file: RpyFile, xlsxPath?: string, sheetName?: string): Promise<RpyFileWriteResult> =>
+    ipcRenderer.invoke('rpy:apply', file, xlsxPath, sheetName),
   validateFormat: (xlsxPath: string): Promise<FormatResult> =>
     ipcRenderer.invoke('format:validate', xlsxPath),
   readTable: (xlsxPath: string): Promise<TableResult> => ipcRenderer.invoke('table:read', xlsxPath),
-  saveTable: (xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> =>
-    ipcRenderer.invoke('table:save', xlsxPath, edits),
-  saveTableAs: (xlsxPath: string, edits: CellEdit[]): Promise<SaveAsResult> =>
-    ipcRenderer.invoke('table:saveAs', xlsxPath, edits),
+  saveTable: (xlsxPath: string, changes: TableChange[]): Promise<SaveResult> =>
+    ipcRenderer.invoke('table:save', xlsxPath, changes),
+  saveTableAs: (xlsxPath: string, changes: TableChange[]): Promise<SaveAsResult> =>
+    ipcRenderer.invoke('table:saveAs', xlsxPath, changes),
   check: (xlsxPath: string): Promise<CheckResult> => ipcRenderer.invoke('check', xlsxPath),
   diff: (oldPath: string, newPath: string): Promise<DiffResult> =>
     ipcRenderer.invoke('diff', oldPath, newPath),

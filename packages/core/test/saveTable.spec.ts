@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readTable } from '../src/xlsx/readTable'
-import { saveTableEdits } from '../src/xlsx/saveTable'
+import { saveTableChanges, saveTableEdits } from '../src/xlsx/saveTable'
 import { sourceXlsx } from './helpers'
 
 describe('saveTableEdits 回写往返', () => {
@@ -41,5 +41,50 @@ describe('saveTableEdits 回写往返', () => {
     const after = await readTable(f)
     const r = after.sheets[0]!.rows.find((x) => x.excelRow === row.excelRow)!
     expect(r.cells['voice']).toBe('')
+  })
+
+  it('插入行后后续行号整体顺延', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'e2r-save-insert-'))
+    const f = join(dir, 'wb.xlsx')
+    copyFileSync(sourceXlsx('sample'), f)
+    const before = await readTable(f)
+    const s0 = before.sheets[0]!
+    const firstRow = s0.rows[0]!
+    const secondRow = s0.rows[1]!
+
+    await saveTableChanges(f, [
+      {
+        type: 'insert-row',
+        sheet: s0.name,
+        excelRow: secondRow.excelRow,
+        values: { role_name: '新角色', text: '插入的新台词', voice_cmd: '默认' },
+      },
+    ])
+
+    const after = await readTable(f)
+    const inserted = after.sheets[0]!.rows.find((x) => x.excelRow === secondRow.excelRow)!
+    const shifted = after.sheets[0]!.rows.find((x) => x.excelRow === secondRow.excelRow + 1)!
+    expect(inserted.cells['role_name']).toBe('新角色')
+    expect(inserted.cells['text']).toBe('插入的新台词')
+    expect(shifted.cells['text']).toBe(secondRow.cells['text'])
+    expect(after.sheets[0]!.rows.find((x) => x.excelRow === firstRow.excelRow)!.cells['text']).toBe(
+      firstRow.cells['text'],
+    )
+  })
+
+  it('删除行后后续行号整体前移', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'e2r-save-delete-'))
+    const f = join(dir, 'wb.xlsx')
+    copyFileSync(sourceXlsx('sample'), f)
+    const before = await readTable(f)
+    const s0 = before.sheets[0]!
+    const firstRow = s0.rows[0]!
+    const secondRow = s0.rows[1]!
+
+    await saveTableChanges(f, [{ type: 'delete-row', sheet: s0.name, excelRow: firstRow.excelRow }])
+
+    const after = await readTable(f)
+    const moved = after.sheets[0]!.rows.find((x) => x.excelRow === firstRow.excelRow)!
+    expect(moved.cells['text']).toBe(secondRow.cells['text'])
   })
 })

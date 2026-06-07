@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   planTtsJobs,
+  planTtsAudioRenames,
   parseLegacyTtsConfig,
   ttsJobSignature,
   serializeTtsConfig,
@@ -62,6 +63,59 @@ describe('planTtsJobs', () => {
     expect(planTtsJobs(withVt)[0]).toMatchObject({ dialogueText: '中文', voiceText: '日文' })
     expect(planTtsJobs(onlyText)[0]!.text).toBe('中文')
     expect(planTtsJobs(onlyText)[0]).toMatchObject({ dialogueText: '中文', voiceText: '' })
+  })
+})
+
+describe('planTtsAudioRenames', () => {
+  it('插入行导致行号后移时生成连续改名计划', () => {
+    const before = planTtsJobs([
+      sheet('S', [
+        row({ role_name: 'A', text: '第一句', voice: 'tts', voice_cmd: 'c' }),
+        row({ text: '第二句', voice: 'tts', voice_cmd: 'c' }),
+      ]),
+    ])
+    const after = planTtsJobs([
+      sheet('S', [
+        row({ role_name: 'A', text: '新增非语音行' }),
+        row({ text: '第一句', voice: 'tts', voice_cmd: 'c' }),
+        row({ text: '第二句', voice: 'tts', voice_cmd: 'c' }),
+      ]),
+    ])
+
+    expect(planTtsAudioRenames(before, after)).toEqual({
+      S: {
+        'A_sheet1_row8_synthesized.wav': 'A_sheet1_row9_synthesized.wav',
+        'A_sheet1_row9_synthesized.wav': 'A_sheet1_row10_synthesized.wav',
+      },
+    })
+  })
+
+  it('删除行导致后续行号前移时只改仍存在的语音', () => {
+    const before = planTtsJobs([
+      sheet('S', [
+        row({ role_name: 'A', text: '删除这一句', voice: 'tts', voice_cmd: 'c' }),
+        row({ text: '保留这一句', voice: 'tts', voice_cmd: 'c' }),
+      ]),
+    ])
+    const after = planTtsJobs([
+      sheet('S', [row({ role_name: 'A', text: '保留这一句', voice: 'tts', voice_cmd: 'c' })]),
+    ])
+
+    expect(planTtsAudioRenames(before, after)).toEqual({
+      S: {
+        'A_sheet1_row9_synthesized.wav': 'A_sheet1_row8_synthesized.wav',
+      },
+    })
+  })
+
+  it('角色或语气变化时不复用旧音频', () => {
+    const before = planTtsJobs([
+      sheet('S', [row({ role_name: 'A', text: '同一句', voice: 'tts', voice_cmd: 'c1' })]),
+    ])
+    const after = planTtsJobs([
+      sheet('S', [row({ role_name: 'B', text: '同一句', voice: 'tts', voice_cmd: 'c1' })]),
+    ])
+    expect(planTtsAudioRenames(before, after)).toEqual({})
   })
 })
 

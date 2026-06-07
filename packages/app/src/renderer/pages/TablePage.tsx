@@ -8,12 +8,12 @@ import {
   type GridApi,
   type GridReadyEvent,
 } from 'ag-grid-community'
-import { Download, FileSpreadsheet, Save, RotateCcw, X } from 'lucide-react'
+import { Download, FileSpreadsheet, Plus, Save, RotateCcw, Trash2, X } from 'lucide-react'
 import { TABLE_COLUMNS, type TableRow } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
 import { spritePositionsFromConfig } from '@e2r/core/tts'
 import { resolveImage } from '@e2r/core/assets'
-import type { CellEdit } from '../../shared/ipc'
+import type { CellEdit, TableChange, TableRowOperation } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { useCharactersStore } from '../stores/useCharactersStore'
 import {
@@ -38,6 +38,7 @@ const RENDERERS: Record<string, ColDef<Row>['cellRenderer']> = {
   music: AudioCell,
   sound: AudioCell,
 }
+const FIRST_DATA_EXCEL_ROW = 8
 // 立绘列拆成 左/中/右 三个虚拟列（底层仍写回单一 character 列）
 const SPRITE_SUB: { field: string; header: string; width: number }[] = [
   { field: 'sprite_left', header: '立绘·左', width: 112 },
@@ -93,7 +94,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   const tableLoading = useWorkspaceStore((s) => s.tableLoading)
   const tableError = useWorkspaceStore((s) => s.tableError)
   const loadTableData = useWorkspaceStore((s) => s.loadTableData)
-  const applyTableEditsToCache = useWorkspaceStore((s) => s.applyTableEditsToCache)
+  const applyTableRowOpsToCache = useWorkspaceStore((s) => s.applyTableRowOpsToCache)
   const ttsConfig = useCharactersStore((s) => s.config)
   // 立绘位置来自「角色配置」：自建角色留空用 left/mid/right，内置凉宫角色已带前缀配置。
   const spritePositions = useMemo(
@@ -110,11 +111,13 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   const [localError, setLocalError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [selectedRow, setSelectedRow] = useState<{ sheet: string; excelRow: number } | null>(null)
 
   const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null)
   const [audio, setAudio] = useState<{ url: string; title: string } | null>(null)
 
   const edits = useRef(new Map<string, CellEdit>())
+  const rowOps = useRef<TableRowOperation[]>([])
   const [dirty, setDirty] = useState(0)
   const gridApi = useRef<GridApi<Row> | null>(null)
   const gridShell = useRef<HTMLDivElement>(null)
@@ -125,9 +128,11 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     if (lastWorkbookPath.current === workbookPath) return
     lastWorkbookPath.current = workbookPath
     edits.current.clear()
+    rowOps.current = []
     rowDataCache.current.clear()
     setDirty(0)
     setActive(0)
+    setSelectedRow(null)
     setLocalError(null)
     setStatus(null)
     setImagePreview(null)
@@ -154,11 +159,16 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   }, [pageActive])
 
   useEffect(() => {
+    gridApi.current?.redrawRows()
+  }, [selectedRow])
+
+  useEffect(() => {
     if (tableError) setLocalError(null)
   }, [tableError])
 
   useEffect(() => {
     setImagePreview(null)
+    setSelectedRow(null)
   }, [active, assets])
 
   // 角色配置会影响立绘三列拆分结果，缓存必须失效。
@@ -175,6 +185,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
 
   const sheet = data?.sheets[active]
   const shownError = localError ?? error
+  const updateDirty = useCallback(() => setDirty(edits.current.size + rowOps.current.length), [])
 
   const context = useMemo<GridContext>(
     () => ({
@@ -290,6 +301,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
 
   const onCellClicked = useCallback(
     (e: CellClickedEvent<Row>) => {
+      if (e.data) setSelectedRow({ sheet: String(e.data['__sheet'] ?? ''), excelRow: Number(e.data['__row']) })
       const field = e.colDef.field
       if (!assets || !field || !IMAGE_PREVIEW_FIELDS.has(field) || !e.data) {
         setImagePreview(null)
@@ -351,52 +363,128 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         gridApi.current?.refreshCells({ columns: ['voice_cmd'], force: true })
       }
       setStatus(null)
-      setDirty(edits.current.size)
+      updateDirty()
     },
-    [sheet, spritePositions],
+    [sheet, spritePositions, updateDirty],
   )
 
   const editedSheetNames = useCallback(
-    () => [...new Set([...edits.current.values()].map((e) => e.sheet).filter(Boolean))],
+    () => [
+      ...new Set(
+        [...edits.current.values(), ...rowOps.current].map((change) => change.sheet).filter(Boolean),
+      ),
+    ],
     [],
   )
 
+  const shiftEditsForRowOp = useCallback((op: TableRowOperation) => {
+    const next = new Map<string, CellEdit>()
+    for (const edit of edits.current.values()) {
+      if (edit.sheet !== op.sheet) {
+        next.set(editKey(edit.sheet, edit.excelRow, edit.col), edit)
+        continue
+      }
+      if (op.type === 'insert-row') {
+        const excelRow = edit.excelRow >= op.excelRow ? edit.excelRow + 1 : edit.excelRow
+        const moved = excelRow === edit.excelRow ? edit : { ...edit, excelRow }
+        next.set(editKey(moved.sheet, moved.excelRow, moved.col), moved)
+      } else {
+        if (edit.excelRow === op.excelRow) continue
+        const excelRow = edit.excelRow > op.excelRow ? edit.excelRow - 1 : edit.excelRow
+        const moved = excelRow === edit.excelRow ? edit : { ...edit, excelRow }
+        next.set(editKey(moved.sheet, moved.excelRow, moved.col), moved)
+      }
+    }
+    edits.current = next
+  }, [])
+
+  const stageRowOp = useCallback(
+    (op: TableRowOperation, nextSelection: { sheet: string; excelRow: number } | null) => {
+      if (!workbookPath) return
+      rowOps.current.push(op)
+      shiftEditsForRowOp(op)
+      applyTableRowOpsToCache([op], workbookPath)
+      rowDataCache.current.clear()
+      setSelectedRow(nextSelection)
+      setStatus(null)
+      setLocalError(null)
+      updateDirty()
+    },
+    [applyTableRowOpsToCache, shiftEditsForRowOp, updateDirty, workbookPath],
+  )
+
+  const appendRow = useCallback(() => {
+    if (!sheet || !workbookPath) return
+    const lastRow = sheet.rows.reduce((max, row) => Math.max(max, row.excelRow), FIRST_DATA_EXCEL_ROW - 1)
+    const excelRow = Math.max(FIRST_DATA_EXCEL_ROW, lastRow + 1)
+    stageRowOp({ type: 'insert-row', sheet: sheet.name, excelRow, values: {} }, { sheet: sheet.name, excelRow })
+  }, [sheet, stageRowOp, workbookPath])
+
+  const insertRowAbove = useCallback(() => {
+    if (!sheet || !workbookPath || selectedRow?.sheet !== sheet.name) return
+    const excelRow = selectedRow.excelRow
+    stageRowOp({ type: 'insert-row', sheet: sheet.name, excelRow, values: {} }, { sheet: sheet.name, excelRow })
+  }, [selectedRow, sheet, stageRowOp, workbookPath])
+
+  const deleteRow = useCallback(() => {
+    if (!sheet || !workbookPath || selectedRow?.sheet !== sheet.name) return
+    const excelRow = selectedRow.excelRow
+    const nextRow = rowData
+      .map((row) => Number(row['__row']))
+      .filter((row) => row !== excelRow)
+      .sort((a, b) => a - b)
+      .find((row) => row > excelRow)
+    const fallback = rowData
+      .map((row) => Number(row['__row']))
+      .filter((row) => row !== excelRow)
+      .sort((a, b) => b - a)[0]
+    const nextSelectionRow = nextRow ?? fallback
+    stageRowOp(
+      { type: 'delete-row', sheet: sheet.name, excelRow },
+      nextSelectionRow ? { sheet: sheet.name, excelRow: nextSelectionRow > excelRow ? nextSelectionRow - 1 : nextSelectionRow } : null,
+    )
+  }, [rowData, selectedRow, sheet, stageRowOp, workbookPath])
+
   const save = useCallback(async () => {
-    if (!workbookPath || edits.current.size === 0) return
+    if (!workbookPath || dirty === 0) return
     const changedSheets = editedSheetNames()
     const pendingEdits = [...edits.current.values()]
+    const pendingChanges: TableChange[] = [...rowOps.current, ...pendingEdits]
     setSaving(true)
     setLocalError(null)
     setStatus(null)
     try {
-      const r = await window.e2r.saveTable(workbookPath, pendingEdits)
+      const r = await window.e2r.saveTable(workbookPath, pendingChanges)
       if (r.ok) {
-        applyTableEditsToCache(pendingEdits, workbookPath)
         rowDataCache.current.clear()
         edits.current.clear()
+        rowOps.current = []
         setDirty(0)
+        await loadTableData(workbookPath, { force: true })
         markSheetChanges(changedSheets, workbookPath)
         setStatus('已保存，脚本列表会自动更新，并在转换页提示未应用到工程的 sheet 更改')
       } else setLocalError(r.error)
     } finally {
       setSaving(false)
     }
-  }, [applyTableEditsToCache, editedSheetNames, markSheetChanges, workbookPath])
+  }, [dirty, editedSheetNames, loadTableData, markSheetChanges, workbookPath])
 
   const saveAs = useCallback(async () => {
     if (!workbookPath) return
     const pendingEdits = [...edits.current.values()]
+    const pendingChanges: TableChange[] = [...rowOps.current, ...pendingEdits]
     const changedSheets = editedSheetNames()
     setExporting(true)
     setLocalError(null)
     setStatus(null)
     try {
-      const r = await window.e2r.saveTableAs(workbookPath, pendingEdits)
+      const r = await window.e2r.saveTableAs(workbookPath, pendingChanges)
       if (r.ok) {
-        applyTableEditsToCache(pendingEdits, workbookPath)
         rowDataCache.current.clear()
         edits.current.clear()
+        rowOps.current = []
         setDirty(0)
+        await loadTableData(workbookPath, { force: true })
         if (changedSheets.length > 0) markSheetChanges(changedSheets, workbookPath)
         setStatus(`已另存为：${r.path}`)
       } else if (r.error) {
@@ -405,16 +493,20 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     } finally {
       setExporting(false)
     }
-  }, [applyTableEditsToCache, editedSheetNames, markSheetChanges, workbookPath])
+  }, [editedSheetNames, loadTableData, markSheetChanges, workbookPath])
 
   const discard = useCallback(() => {
     edits.current.clear()
+    rowOps.current = []
     rowDataCache.current.clear()
     setDirty(0)
+    setSelectedRow(null)
     setLocalError(null)
     setStatus(null)
     if (workbookPath) void loadTableData(workbookPath, { force: true })
   }, [loadTableData, workbookPath])
+
+  const selectedExcelRow = sheet && selectedRow?.sheet === sheet.name ? selectedRow.excelRow : null
 
   return (
     <div className="flex h-full flex-col">
@@ -475,6 +567,38 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         />
       )}
 
+      {sheet && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">
+          <button
+            type="button"
+            onClick={appendRow}
+            disabled={!workbookPath || saving || exporting}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3 font-medium text-app-text transition-colors hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+          >
+            <Plus size={13} /> 新建行
+          </button>
+          <button
+            type="button"
+            onClick={insertRowAbove}
+            disabled={!workbookPath || !selectedExcelRow || saving || exporting}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3 font-medium text-app-text transition-colors hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+          >
+            <Plus size={13} /> 插入上方
+          </button>
+          <button
+            type="button"
+            onClick={deleteRow}
+            disabled={!workbookPath || !selectedExcelRow || saving || exporting}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 font-medium text-rose-600 transition-colors hover:bg-rose-400/20 disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300"
+          >
+            <Trash2 size={13} /> 删除行
+          </button>
+          <span className="ml-1 text-app-muted">
+            {selectedExcelRow ? `已选中 Excel 第 ${selectedExcelRow} 行` : '选中单元格后可插入或删除该行'}
+          </span>
+        </div>
+      )}
+
       <section className="glass-card relative min-h-0 flex-1 overflow-hidden">
         {sheet && sheet.rows.length > 0 ? (
           <div ref={gridShell} className="h-full w-full">
@@ -490,6 +614,13 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
               onCellClicked={onCellClicked}
               onCellValueChanged={onCellValueChanged}
               onBodyScroll={() => setImagePreview(null)}
+              getRowClass={(p) => {
+                const selected = selectedRow
+                if (!selected) return undefined
+                return selected.sheet === p.data?.['__sheet'] && selected.excelRow === Number(p.data?.['__row'])
+                  ? 'e2r-selected-row'
+                  : undefined
+              }}
               stopEditingWhenCellsLoseFocus
               animateRows={false}
             />
