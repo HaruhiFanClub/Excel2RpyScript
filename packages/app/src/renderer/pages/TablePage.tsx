@@ -30,6 +30,8 @@ type Row = Record<string, string | number>
 type AnchorRect = { left: number; right: number; top: number; bottom: number }
 type ImagePreview = { url: string; title: string; anchor: AnchorRect; avoidLeft?: number }
 type RowDataCacheEntry = { sourceRows: TableRow[]; spriteKey: string; rows: Row[] }
+type TableRowInsertOp = Extract<TableRowOperation, { type: 'insert-row' }>
+type PendingInsertedRow = { op: TableRowInsertOp; sheet: string; excelRow: number }
 const EFFECTIVE_ROLE_FIELD = '__effectiveRole'
 const LARGE_TEXT = new Set(['text', 'voice_text', 'remark'])
 const IMAGE_PREVIEW_FIELDS = new Set(['background', 'sprite_left', 'sprite_mid', 'sprite_right'])
@@ -118,6 +120,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
 
   const edits = useRef(new Map<string, CellEdit>())
   const rowOps = useRef<TableRowOperation[]>([])
+  const pendingInsertedRows = useRef<PendingInsertedRow[]>([])
   const [dirty, setDirty] = useState(0)
   const gridApi = useRef<GridApi<Row> | null>(null)
   const gridShell = useRef<HTMLDivElement>(null)
@@ -129,6 +132,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     lastWorkbookPath.current = workbookPath
     edits.current.clear()
     rowOps.current = []
+    pendingInsertedRows.current = []
     rowDataCache.current.clear()
     setDirty(0)
     setActive(0)
@@ -398,10 +402,25 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     edits.current = next
   }, [])
 
+  const trackPendingInsertedRows = useCallback((op: TableRowOperation) => {
+    if (op.type === 'insert-row') {
+      for (const row of pendingInsertedRows.current) {
+        if (row.sheet === op.sheet && row.excelRow >= op.excelRow) row.excelRow += 1
+      }
+      pendingInsertedRows.current.push({ op, sheet: op.sheet, excelRow: op.excelRow })
+      return
+    }
+
+    for (const row of pendingInsertedRows.current) {
+      if (row.sheet === op.sheet && row.excelRow > op.excelRow) row.excelRow -= 1
+    }
+  }, [])
+
   const stageRowOp = useCallback(
     (op: TableRowOperation, nextSelection: { sheet: string; excelRow: number } | null) => {
       if (!workbookPath) return
       rowOps.current.push(op)
+      trackPendingInsertedRows(op)
       shiftEditsForRowOp(op)
       applyTableRowOpsToCache([op], workbookPath)
       rowDataCache.current.clear()
@@ -409,6 +428,46 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
       setStatus(null)
       setLocalError(null)
       updateDirty()
+    },
+    [applyTableRowOpsToCache, shiftEditsForRowOp, trackPendingInsertedRows, updateDirty, workbookPath],
+  )
+
+  const cancelPendingInsertedRow = useCallback(
+    (op: TableRowOperation, nextSelection: { sheet: string; excelRow: number } | null): boolean => {
+      if (!workbookPath || op.type !== 'delete-row') return false
+      const pendingIndex = pendingInsertedRows.current.findIndex(
+        (row) => row.sheet === op.sheet && row.excelRow === op.excelRow,
+      )
+      if (pendingIndex < 0) return false
+
+      const pending = pendingInsertedRows.current[pendingIndex]!
+      const opIndex = rowOps.current.indexOf(pending.op)
+      if (opIndex < 0) return false
+
+      const nextOps: TableRowOperation[] = []
+      for (let i = 0; i < rowOps.current.length; i++) {
+        const current = rowOps.current[i]!
+        if (i === opIndex) continue
+        if (i > opIndex && current.sheet === pending.sheet && current.excelRow > pending.op.excelRow) {
+          current.excelRow -= 1
+        }
+        nextOps.push(current)
+      }
+      rowOps.current = nextOps
+
+      pendingInsertedRows.current.splice(pendingIndex, 1)
+      for (const row of pendingInsertedRows.current) {
+        if (row.sheet === op.sheet && row.excelRow > op.excelRow) row.excelRow -= 1
+      }
+
+      shiftEditsForRowOp(op)
+      applyTableRowOpsToCache([op], workbookPath)
+      rowDataCache.current.clear()
+      setSelectedRow(nextSelection)
+      setStatus(null)
+      setLocalError(null)
+      updateDirty()
+      return true
     },
     [applyTableRowOpsToCache, shiftEditsForRowOp, updateDirty, workbookPath],
   )
@@ -439,11 +498,13 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
       .filter((row) => row !== excelRow)
       .sort((a, b) => b - a)[0]
     const nextSelectionRow = nextRow ?? fallback
-    stageRowOp(
-      { type: 'delete-row', sheet: sheet.name, excelRow },
-      nextSelectionRow ? { sheet: sheet.name, excelRow: nextSelectionRow > excelRow ? nextSelectionRow - 1 : nextSelectionRow } : null,
-    )
-  }, [rowData, selectedRow, sheet, stageRowOp, workbookPath])
+    const op: TableRowOperation = { type: 'delete-row', sheet: sheet.name, excelRow }
+    const nextSelection = nextSelectionRow
+      ? { sheet: sheet.name, excelRow: nextSelectionRow > excelRow ? nextSelectionRow - 1 : nextSelectionRow }
+      : null
+    if (cancelPendingInsertedRow(op, nextSelection)) return
+    stageRowOp(op, nextSelection)
+  }, [cancelPendingInsertedRow, rowData, selectedRow, sheet, stageRowOp, workbookPath])
 
   const save = useCallback(async () => {
     if (!workbookPath || dirty === 0) return
@@ -459,6 +520,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         rowDataCache.current.clear()
         edits.current.clear()
         rowOps.current = []
+        pendingInsertedRows.current = []
         setDirty(0)
         await loadTableData(workbookPath, { force: true })
         markSheetChanges(changedSheets, workbookPath)
@@ -483,6 +545,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         rowDataCache.current.clear()
         edits.current.clear()
         rowOps.current = []
+        pendingInsertedRows.current = []
         setDirty(0)
         await loadTableData(workbookPath, { force: true })
         if (changedSheets.length > 0) markSheetChanges(changedSheets, workbookPath)
@@ -498,6 +561,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   const discard = useCallback(() => {
     edits.current.clear()
     rowOps.current = []
+    pendingInsertedRows.current = []
     rowDataCache.current.clear()
     setDirty(0)
     setSelectedRow(null)
