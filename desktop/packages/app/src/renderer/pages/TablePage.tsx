@@ -12,7 +12,6 @@ import {
 import { FileSpreadsheet, TableProperties, Save, RotateCcw, X, MoveHorizontal } from 'lucide-react'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
-import { enabledRoleNames, tonesForRole, isRoleEnabled } from '@e2r/core/tts'
 import type { CellEdit } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { useCharactersStore } from '../stores/useCharactersStore'
@@ -20,8 +19,7 @@ import {
   SpriteSlotCell,
   BgCell,
   AudioCell,
-  VoiceCmdCell,
-  DatalistEditor,
+  ComboCell,
   type GridContext,
 } from '../components/cellRenderers'
 import { SpritePositionsModal } from '../components/SpritePositionsModal'
@@ -139,18 +137,6 @@ export default function TablePage() {
   )
 
 
-  // 已启用角色名 + 其别名（表格角色列下拉建议）
-  const roleSuggestions = useMemo<string[]>(() => {
-    if (!ttsConfig) return []
-    const out = new Set<string>()
-    for (const [name, m] of Object.entries(ttsConfig.roleModelMapping)) {
-      if (!isRoleEnabled(m)) continue
-      out.add(name)
-      for (const a of m.aliases ?? []) out.add(a)
-    }
-    return [...out]
-  }, [ttsConfig])
-
   const columnDefs = useMemo<ColDef<Row>[]>(() => {
     const defs: ColDef<Row>[] = [
       { headerName: '#', field: '__row', width: 60, pinned: 'left', sortable: false, editable: false, cellClass: 'text-app-muted' },
@@ -167,28 +153,23 @@ export default function TablePage() {
           })
         }
       } else if (c.key === 'role_name') {
-        // 角色列：下拉建议=已启用角色（含别名），同时允许自由输入其它说话人
+        // 角色列：选中/悬浮出现下拉按钮（已启用角色含别名），双击仍可自由输入
         defs.push({
           headerName: c.header,
           field: c.key,
           width: c.width,
           editable: true,
           pinned: 'left' as const,
-          cellEditor: DatalistEditor,
-          cellEditorParams: { values: roleSuggestions },
+          cellRenderer: ComboCell,
         })
       } else if (c.key === 'voice_cmd') {
-        // 语音指令列：下拉仅显示该行角色（名称/别名命中）对应的语气，仍允许自由输入
+        // 语音指令列：下拉仅显示该行角色（名称/别名命中）对应的语气，双击仍可自由输入
         defs.push({
           headerName: c.header,
           field: c.key,
           width: c.width,
           editable: true,
-          cellRenderer: VoiceCmdCell,
-          cellEditor: DatalistEditor,
-          cellEditorParams: (p: { data?: Row }) => ({
-            values: ttsConfig ? tonesForRole(ttsConfig, String(p.data?.['role_name'] ?? '')) : [],
-          }),
+          cellRenderer: ComboCell,
         })
       } else {
         defs.push({
@@ -202,7 +183,7 @@ export default function TablePage() {
       }
     }
     return defs
-  }, [ttsConfig, roleSuggestions])
+  }, [])
 
   const defaultColDef = useMemo<ColDef<Row>>(() => ({ resizable: true, sortable: true }), [])
   const rowData = useMemo<Row[]>(

@@ -147,3 +147,13 @@ body {
 .nodrag {
   -webkit-app-region: no-drag;
 }
+
+/* ---------- 表格下拉（角色 / 语音指令）：选中或悬浮单元格才显示下拉按钮 ---------- */
+.e2r-combo-caret {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ag-cell:hover .e2r-combo-caret,
+.ag-cell-focus .e2r-combo-caret {
+  opacity: 1;
+}

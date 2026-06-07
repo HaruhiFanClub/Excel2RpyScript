@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef } from 'react'
-import type { CustomCellRendererProps, CustomCellEditorProps } from 'ag-grid-react'
-import { Play, Music, Upload } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import type { CustomCellRendererProps } from 'ag-grid-react'
+import { Play, Music, Upload, ChevronDown, Check, Search } from 'lucide-react'
 import {
   spriteImageName,
   resolveImage,
@@ -9,7 +10,7 @@ import {
   COLOR_WORDS,
   type AssetMaps,
 } from '@e2r/core/assets'
-import { toneFor, type TtsConfig } from '@e2r/core/tts'
+import { toneFor, tonesForRole, isRoleEnabled, type TtsConfig } from '@e2r/core/tts'
 import { assetUrl } from '../lib/asset'
 
 export type WsAssetType = 'background' | 'sprite' | 'music' | 'sound'
@@ -104,52 +105,172 @@ export function SpriteSlotCell(p: CustomCellRendererProps) {
   )
 }
 
-// 语音指令：显示 指令 + 语气（关联 TTS 配置时）
-export function VoiceCmdCell(p: CustomCellRendererProps) {
+// 该列在某行可选的下拉项：角色列=已启用角色(含别名)；语音指令列=该行角色对应的语气。
+function comboOptions(ctx: GridContext, field: string, row: Record<string, unknown>): string[] {
+  const cfg = ctx.ttsConfig
+  if (!cfg) return []
+  if (field === 'role_name') {
+    const out = new Set<string>()
+    for (const [name, m] of Object.entries(cfg.roleModelMapping)) {
+      if (!isRoleEnabled(m)) continue
+      out.add(name)
+      for (const a of m.aliases ?? []) out.add(a)
+    }
+    return [...out]
+  }
+  if (field === 'voice_cmd') return tonesForRole(cfg, String(row['role_name'] ?? ''))
+  return []
+}
+
+// 角色 / 语音指令列：单元格内显示值（语音指令附语气 chip）+ 选中/悬浮时出现下拉按钮，
+// 点按钮弹出美观可搜索的下拉框（portal，避免被表格裁剪）。双击仍可自由输入。
+export function ComboCell(p: CustomCellRendererProps) {
   const ctx = ctxOf(p)
-  const raw = String(p.value ?? '').trim()
-  if (!raw) return null
-  const tone = ctx.ttsConfig ? toneFor(ctx.ttsConfig, raw) : ''
+  const field = p.colDef?.field ?? ''
+  const value = String(p.value ?? '')
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const tone = field === 'voice_cmd' && ctx.ttsConfig && value ? toneFor(ctx.ttsConfig, value) : ''
+
+  const choose = (v: string) => {
+    p.setValue?.(v)
+    setOpen(false)
+  }
+
   return (
-    <div className="flex h-full items-center gap-1.5 overflow-hidden">
-      <span className="truncate">{raw}</span>
-      {tone && tone !== raw && (
+    <div className="flex h-full w-full items-center gap-1.5 overflow-hidden">
+      {value ? <span className="truncate">{value}</span> : <span className="text-app-muted/40">—</span>}
+      {tone && tone !== value && (
         <span className="shrink-0 rounded bg-sky-400/12 px-1.5 py-0.5 text-[11px] text-sky-600 dark:text-sky-300">
           {tone}
         </span>
+      )}
+      <button
+        ref={btnRef}
+        type="button"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((o) => !o)
+        }}
+        style={open ? { opacity: 1 } : undefined}
+        className="e2r-combo-caret ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded text-app-muted hover:bg-black/10 hover:text-app-text dark:hover:bg-white/10"
+        title="选择"
+        aria-label="选择"
+      >
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <ComboPopup
+          anchorRef={btnRef}
+          options={comboOptions(ctx, field, p.data ?? {})}
+          value={value}
+          onPick={choose}
+          onClose={() => setOpen(false)}
+        />
       )}
     </div>
   )
 }
 
-// 通用「自由输入 + 下拉建议」单元格编辑器（datalist）：
-// 角色列建议=已启用角色（含别名）；语音指令列建议=该行角色对应的语气。两者都仍可自由输入。
-export function DatalistEditor(props: CustomCellEditorProps & { values?: string[] }) {
-  const { value, onValueChange, stopEditing, values = [] } = props
-  const ref = useRef<HTMLInputElement>(null)
-  const listId = useId()
+// 下拉浮层：右对齐于触发按钮、可搜索、当前值打勾；点击外部/Esc 关闭。
+function ComboPopup({
+  anchorRef,
+  options,
+  value,
+  onPick,
+  onClose,
+}: {
+  anchorRef: React.RefObject<HTMLElement | null>
+  options: string[]
+  value: string
+  onPick: (v: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [query, setQuery] = useState('')
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  const WIDTH = 248
+
+  useLayoutEffect(() => {
+    const r = anchorRef.current?.getBoundingClientRect()
+    if (!r) return
+    const left = Math.max(8, Math.min(r.right - WIDTH, window.innerWidth - WIDTH - 8))
+    const below = r.bottom + 4
+    const estH = Math.min(320, 52 + Math.max(1, options.length) * 30)
+    const top = below + estH > window.innerHeight - 8 ? Math.max(8, r.top - estH - 4) : below
+    setPos({ left, top })
+    inputRef.current?.focus()
+  }, [anchorRef, options.length])
+
   useEffect(() => {
-    ref.current?.focus()
-    ref.current?.select()
-  }, [])
-  return (
-    <div className="flex h-full w-full items-center">
-      <input
-        ref={ref}
-        list={listId}
-        value={value ?? ''}
-        onChange={(e) => onValueChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') stopEditing()
-        }}
-        className="h-full w-full bg-transparent px-2 text-[12.5px] text-app-text outline-none"
-      />
-      <datalist id={listId}>
-        {values.map((v) => (
-          <option key={v} value={v} />
-        ))}
-      </datalist>
-    </div>
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (ref.current?.contains(t) || anchorRef.current?.contains(t)) return
+      onClose()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDoc, true)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('mousedown', onDoc, true)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [anchorRef, onClose])
+
+  const q = query.trim().toLowerCase()
+  const filtered = q ? options.filter((o) => o.toLowerCase().includes(q)) : options
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, width: WIDTH }}
+      className="fixed z-[100] overflow-hidden rounded-xl border border-app-border bg-app-surface shadow-[0_12px_40px_-8px_rgb(15_23_42_/_0.28)] backdrop-blur-2xl"
+    >
+        <div className="flex items-center gap-1.5 border-b border-app-border px-2.5 py-1.5">
+          <Search size={13} className="shrink-0 text-app-muted" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索…"
+            className="w-full bg-transparent text-[12.5px] text-app-text outline-none placeholder:text-app-muted/60"
+          />
+        </div>
+        <div className="custom-scrollbar max-h-[268px] overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-3 text-center text-[12px] text-app-muted">
+              {options.length === 0 ? '该角色暂无可选项' : '无匹配项'}
+            </div>
+          ) : (
+            filtered.map((o) => {
+              const active = o === value
+              return (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => onPick(o)}
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors ${
+                    active
+                      ? 'bg-sky-400/12 text-sky-700 dark:text-sky-200'
+                      : 'text-app-text hover:bg-black/5 dark:hover:bg-white/5'
+                  }`}
+                >
+                  <Check
+                    size={13}
+                    className={`shrink-0 ${active ? 'text-sky-500' : 'text-transparent'}`}
+                  />
+                  <span className="truncate">{o}</span>
+                </button>
+              )
+            })
+          )}
+        </div>
+    </div>,
+    document.body,
   )
 }
 
