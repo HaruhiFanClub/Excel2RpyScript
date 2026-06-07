@@ -299,6 +299,26 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     gridApi.current = e.api
   }, [])
 
+  const baseCellValue = useCallback(
+    (excelRow: number, col: CellEdit['col']): string => {
+      const row = sheet?.rows.find((r) => r.excelRow === excelRow)
+      return row?.cells[col] ?? ''
+    },
+    [sheet],
+  )
+
+  const stageCellEdit = useCallback(
+    (edit: CellEdit) => {
+      const key = editKey(edit.sheet, edit.excelRow, edit.col)
+      if (edit.value === baseCellValue(edit.excelRow, edit.col)) {
+        edits.current.delete(key)
+      } else {
+        edits.current.set(key, edit)
+      }
+    },
+    [baseCellValue],
+  )
+
   const onCellClicked = useCallback(
     (e: CellClickedEvent<Row>) => {
       if (e.data) setSelectedRow({ sheet: String(e.data['__sheet'] ?? ''), excelRow: Number(e.data['__row']) })
@@ -340,14 +360,14 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
           },
           spritePositions,
         )
-        edits.current.set(editKey(sheet.name, excelRow, 'character'), {
+        stageCellEdit({
           sheet: sheet.name,
           excelRow,
           col: 'character',
           value: col19,
         })
       } else {
-        edits.current.set(editKey(sheet.name, excelRow, col), {
+        stageCellEdit({
           sheet: sheet.name,
           excelRow,
           col: col as CellEdit['col'],
@@ -365,7 +385,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
       setStatus(null)
       updateDirty()
     },
-    [sheet, spritePositions, updateDirty],
+    [sheet, spritePositions, stageCellEdit, updateDirty],
   )
 
   const editedSheetNames = useCallback(
