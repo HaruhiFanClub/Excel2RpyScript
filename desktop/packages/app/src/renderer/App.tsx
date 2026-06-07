@@ -16,11 +16,17 @@ const PAGES: PageId[] = ['convert', 'table', 'tts', 'characters', 'check', 'proj
 export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
   const [page, setPage] = useState<PageId>(initial && PAGES.includes(initial) ? initial : 'convert')
+  const [tableVisited, setTableVisited] = useState(page === 'table')
 
   // 开发钩子 + 恢复上次会话（持久化的关联工程在启动时重新扫描）
   const importWorkbook = useWorkspaceStore((s) => s.importWorkbook)
   const linkProject = useWorkspaceStore((s) => s.linkProject)
   const loadCharacters = useCharactersStore((s) => s.load)
+
+  useEffect(() => {
+    if (page === 'table') setTableVisited(true)
+  }, [page])
+
   useEffect(() => {
     void loadCharacters()
     if (window.e2r.demoFile) void importWorkbook(window.e2r.demoFile)
@@ -50,29 +56,41 @@ export function App(): JSX.Element {
 
           <div className="flex min-w-0 flex-1 flex-col pt-8">
             <WorkspaceBar />
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={page}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="custom-scrollbar min-h-0 flex-1 overflow-y-auto"
-              >
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
+              {tableVisited && (
                 <div
-                  className={`mx-auto h-full px-8 pb-7 pt-6 ${
-                    page === 'table' || page === 'tts' ? 'max-w-none' : 'max-w-5xl'
-                  }`}
+                  className={`${
+                    page === 'table' ? 'block' : 'hidden'
+                  } mx-auto h-full max-w-none px-8 pb-7 pt-6`}
                 >
-                  {page === 'convert' && <ConvertPage />}
-                  {page === 'table' && <TablePage />}
-                  {page === 'tts' && <TtsPage />}
-                  {page === 'characters' && <CharactersPage />}
-                  {page === 'check' && <CheckPage />}
-                  {page === 'project' && <ProjectPage />}
+                  <TablePage active={page === 'table'} />
                 </div>
-              </motion.div>
-            </AnimatePresence>
+              )}
+              <AnimatePresence mode="wait">
+                {page !== 'table' && (
+                  <motion.div
+                    key={page}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className="h-full"
+                  >
+                    <div
+                      className={`mx-auto h-full px-8 pb-7 pt-6 ${
+                        page === 'tts' ? 'max-w-none' : 'max-w-5xl'
+                      }`}
+                    >
+                      {page === 'convert' && <ConvertPage />}
+                      {page === 'tts' && <TtsPage />}
+                      {page === 'characters' && <CharactersPage />}
+                      {page === 'check' && <CheckPage />}
+                      {page === 'project' && <ProjectPage />}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </div>

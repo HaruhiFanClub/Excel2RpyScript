@@ -3,11 +3,12 @@ import { AgGridReact } from 'ag-grid-react'
 import {
   type CellValueChangedEvent,
   type ColDef,
+  type GetRowIdParams,
   type GridApi,
   type GridReadyEvent,
 } from 'ag-grid-community'
 import { Download, FileSpreadsheet, Save, RotateCcw, X } from 'lucide-react'
-import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
+import { TABLE_COLUMNS, type TableRow } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
 import { spritePositionsFromConfig } from '@e2r/core/tts'
 import type { CellEdit } from '../../shared/ipc'
@@ -23,6 +24,7 @@ import {
 import { SheetTabs, appGridTheme, defaultGridColDef } from '../components/dataGrid'
 
 type Row = Record<string, string | number>
+type RowDataCacheEntry = { sourceRows: TableRow[]; spriteKey: string; rows: Row[] }
 const LARGE_TEXT = new Set(['text', 'voice_text', 'remark'])
 const RENDERERS: Record<string, ColDef<Row>['cellRenderer']> = {
   background: BgCell,
@@ -37,11 +39,17 @@ const SPRITE_SUB: { field: string; header: string }[] = [
 ]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
 
-export default function TablePage() {
+export default function TablePage({ active: pageActive = true }: { active?: boolean }) {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const assets = useWorkspaceStore((s) => s.assets)
   const setAssets = useWorkspaceStore((s) => s.setAssets)
   const markSheetChanges = useWorkspaceStore((s) => s.markSheetChanges)
+  const tableData = useWorkspaceStore((s) => s.tableData)
+  const tableWorkbookPath = useWorkspaceStore((s) => s.tableWorkbookPath)
+  const tableLoading = useWorkspaceStore((s) => s.tableLoading)
+  const tableError = useWorkspaceStore((s) => s.tableError)
+  const loadTableData = useWorkspaceStore((s) => s.loadTableData)
+  const applyTableEditsToCache = useWorkspaceStore((s) => s.applyTableEditsToCache)
   const ttsConfig = useCharactersStore((s) => s.config)
   // 立绘位置来自「角色配置」：自建角色留空用 left/mid/right，内置凉宫角色已带前缀配置。
   const spritePositions = useMemo(
@@ -49,14 +57,14 @@ export default function TablePage() {
     [ttsConfig],
   )
 
-  const [data, setData] = useState<TableData | null>(null)
+  const data = tableWorkbookPath === workbookPath ? tableData : null
+  const loading = tableLoading && !data
+  const error = tableError
   const [active, setActive] = useState(0)
-  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
   const [query, setQuery] = useState('')
 
   const [img, setImg] = useState<{ url: string; title: string } | null>(null)
@@ -65,31 +73,50 @@ export default function TablePage() {
   const edits = useRef(new Map<string, CellEdit>())
   const [dirty, setDirty] = useState(0)
   const gridApi = useRef<GridApi<Row> | null>(null)
+  const rowDataCache = useRef(new Map<string, RowDataCacheEntry>())
+  const lastWorkbookPath = useRef('')
 
   useEffect(() => {
-    if (!workbookPath) {
-      setData(null)
-      return
-    }
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    window.e2r
-      .readTable(workbookPath)
-      .then((r) => {
-        if (cancelled) return
-        if (r.ok) {
-          setData({ sheets: r.sheets })
-          setActive((a) => (a < r.sheets.length ? a : 0))
-          edits.current.clear()
-          setDirty(0)
-        } else setError(r.error)
-      })
-      .finally(() => !cancelled && setLoading(false))
-    return () => {
-      cancelled = true
-    }
-  }, [workbookPath, reloadKey])
+    if (lastWorkbookPath.current === workbookPath) return
+    lastWorkbookPath.current = workbookPath
+    edits.current.clear()
+    rowDataCache.current.clear()
+    setDirty(0)
+    setActive(0)
+    setLocalError(null)
+    setStatus(null)
+  }, [workbookPath])
+
+  useEffect(() => {
+    if (!workbookPath || !pageActive) return
+    if (data) return
+    void loadTableData(workbookPath)
+  }, [data, loadTableData, pageActive, workbookPath])
+
+  useEffect(() => {
+    if (!data) return
+    setActive((a) => (a < data.sheets.length ? a : 0))
+  }, [data])
+
+  useEffect(() => {
+    if (!pageActive) return
+    const id = window.requestAnimationFrame(() => {
+      gridApi.current?.refreshCells({ force: false })
+      gridApi.current?.resetRowHeights()
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [pageActive])
+
+  useEffect(() => {
+    if (tableError) setLocalError(null)
+  }, [tableError])
+
+  // 角色配置会影响立绘三列拆分结果，缓存必须失效。
+  const spriteKey = useMemo(() => JSON.stringify(spritePositions), [spritePositions])
+
+  useEffect(() => {
+    rowDataCache.current.clear()
+  }, [spriteKey, data])
 
   // 关联工程 / 配置变化后刷新单元格
   useEffect(() => {
@@ -97,6 +124,7 @@ export default function TablePage() {
   }, [assets, ttsConfig])
 
   const sheet = data?.sheets[active]
+  const shownError = localError ?? error
 
   const context = useMemo<GridContext>(
     () => ({
@@ -110,16 +138,19 @@ export default function TablePage() {
         if (r.ok) {
           setAssets(r.index)
           gridApi.current?.refreshCells({ force: true })
-          setError(null)
+          setLocalError(null)
           return r.value
         }
-        if (r.error) setError(r.error)
+        if (r.error) setLocalError(r.error)
         return null
       },
     }),
     [assets, ttsConfig, setAssets, workbookPath],
   )
 
+  const getRowId = useCallback((p: GetRowIdParams<Row>) => {
+    return `${p.data['__sheet']}:${p.data['__row']}`
+  }, [])
 
   const columnDefs = useMemo<ColDef<Row>[]>(() => {
     const defs: ColDef<Row>[] = [
@@ -171,21 +202,28 @@ export default function TablePage() {
   }, [])
 
   const defaultColDef = useMemo<ColDef<Row>>(() => defaultGridColDef, [])
-  const rowData = useMemo<Row[]>(
-    () =>
-      sheet?.rows.map((r) => {
-        const s = parseSprites(r.cells['character'] ?? '', spritePositions)
-        return {
-          __row: r.excelRow,
-          ...r.cells,
-          sprite_left: s.left,
-          sprite_mid: s.mid,
-          sprite_right: s.right,
-          sprite_other: s.other,
-        }
-      }) ?? [],
-    [sheet, spritePositions],
-  )
+  const rowData = useMemo<Row[]>(() => {
+    if (!sheet) return []
+    const cacheKey = `${tableWorkbookPath}:${sheet.name}`
+    const cached = rowDataCache.current.get(cacheKey)
+    if (cached && cached.sourceRows === sheet.rows && cached.spriteKey === spriteKey) {
+      return cached.rows
+    }
+    const rows = sheet.rows.map((r) => {
+      const s = parseSprites(r.cells['character'] ?? '', spritePositions)
+      return {
+        __sheet: sheet.name,
+        __row: r.excelRow,
+        ...r.cells,
+        sprite_left: s.left,
+        sprite_mid: s.mid,
+        sprite_right: s.right,
+        sprite_other: s.other,
+      }
+    })
+    rowDataCache.current.set(cacheKey, { sourceRows: sheet.rows, spriteKey, rows })
+    return rows
+  }, [sheet, spriteKey, spritePositions, tableWorkbookPath])
 
   const onGridReady = useCallback((e: GridReadyEvent<Row>) => {
     gridApi.current = e.api
@@ -194,7 +232,7 @@ export default function TablePage() {
   const onCellValueChanged = useCallback(
     (e: CellValueChangedEvent<Row>) => {
       const col = e.colDef.field
-      if (!col || col === '__row' || !sheet) return
+      if (!col || col === '__row' || col === '__sheet' || !sheet) return
       const excelRow = Number(e.data['__row'])
       if (col.startsWith('sprite_')) {
         // 三列任一变化 → 重建单一 character 列（左→中→右→other 顺序）
@@ -235,52 +273,57 @@ export default function TablePage() {
   const save = useCallback(async () => {
     if (!workbookPath || edits.current.size === 0) return
     const changedSheets = editedSheetNames()
+    const pendingEdits = [...edits.current.values()]
     setSaving(true)
-    setError(null)
+    setLocalError(null)
     setStatus(null)
     try {
-      const r = await window.e2r.saveTable(workbookPath, [...edits.current.values()])
+      const r = await window.e2r.saveTable(workbookPath, pendingEdits)
       if (r.ok) {
+        applyTableEditsToCache(pendingEdits, workbookPath)
+        rowDataCache.current.clear()
         edits.current.clear()
         setDirty(0)
         markSheetChanges(changedSheets, workbookPath)
         setStatus('已保存，脚本列表会自动更新，并在转换页提示未应用到工程的 sheet 更改')
-        setReloadKey((k) => k + 1)
-      } else setError(r.error)
+      } else setLocalError(r.error)
     } finally {
       setSaving(false)
     }
-  }, [editedSheetNames, markSheetChanges, workbookPath])
+  }, [applyTableEditsToCache, editedSheetNames, markSheetChanges, workbookPath])
 
   const saveAs = useCallback(async () => {
     if (!workbookPath) return
     const pendingEdits = [...edits.current.values()]
     const changedSheets = editedSheetNames()
     setExporting(true)
-    setError(null)
+    setLocalError(null)
     setStatus(null)
     try {
       const r = await window.e2r.saveTableAs(workbookPath, pendingEdits)
       if (r.ok) {
+        applyTableEditsToCache(pendingEdits, workbookPath)
+        rowDataCache.current.clear()
         edits.current.clear()
         setDirty(0)
         if (changedSheets.length > 0) markSheetChanges(changedSheets, workbookPath)
         setStatus(`已另存为：${r.path}`)
-        if (pendingEdits.length > 0) setReloadKey((k) => k + 1)
       } else if (r.error) {
-        setError(r.error)
+        setLocalError(r.error)
       }
     } finally {
       setExporting(false)
     }
-  }, [editedSheetNames, markSheetChanges, workbookPath])
+  }, [applyTableEditsToCache, editedSheetNames, markSheetChanges, workbookPath])
 
   const discard = useCallback(() => {
     edits.current.clear()
+    rowDataCache.current.clear()
     setDirty(0)
+    setLocalError(null)
     setStatus(null)
-    setReloadKey((k) => k + 1)
-  }, [])
+    if (workbookPath) void loadTableData(workbookPath, { force: true })
+  }, [loadTableData, workbookPath])
 
   return (
     <div className="flex h-full flex-col">
@@ -292,7 +335,7 @@ export default function TablePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {error && <span className="max-w-[360px] truncate text-[12px] text-rose-500">{error}</span>}
+          {shownError && <span className="max-w-[360px] truncate text-[12px] text-rose-500">{shownError}</span>}
           {status && <span className="max-w-[360px] truncate text-[12px] text-emerald-600 dark:text-emerald-300">{status}</span>}
           {dirty > 0 && (
             <>
@@ -349,6 +392,7 @@ export default function TablePage() {
               context={context}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
+              getRowId={getRowId}
               rowData={rowData}
               quickFilterText={query}
               onGridReady={onGridReady}
@@ -361,7 +405,7 @@ export default function TablePage() {
           <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-app-muted">
             <FileSpreadsheet size={36} strokeWidth={1.2} />
             <p className="text-[13px]">
-              {loading ? '读取中…' : error ? `读取失败：${error}` : '选择工作簿以浏览与编辑剧本数据'}
+              {loading ? '读取中…' : shownError ? `读取失败：${shownError}` : '选择工作簿以浏览与编辑剧本数据'}
             </p>
           </div>
         )}

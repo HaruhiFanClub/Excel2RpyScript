@@ -56,6 +56,7 @@ interface TtsGridContext extends GridContext {
 export default function TtsPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const markSheetChanges = useWorkspaceStore((s) => s.markSheetChanges)
+  const applyTableEditsToCache = useWorkspaceStore((s) => s.applyTableEditsToCache)
   const config = useCharactersStore((s) => s.config)
 
   const [health, setHealth] = useState<{ ok: boolean; device?: string; error?: string } | null>(null)
@@ -293,10 +294,10 @@ export default function TtsPage() {
       const job = e.data.__job
       const value = String(e.newValue ?? '').trim()
       if (value === job.voiceCmd) return
-      const r = await window.e2r.saveTable(workbookPath, [
-        { sheet: job.sheetName, excelRow: job.excelRow, col: 'voice_cmd', value },
-      ])
+      const edits = [{ sheet: job.sheetName, excelRow: job.excelRow, col: 'voice_cmd' as const, value }]
+      const r = await window.e2r.saveTable(workbookPath, edits)
       if (r.ok) {
+        applyTableEditsToCache(edits, workbookPath)
         setError(null)
         markSheetChanges([job.sheetName], workbookPath)
         await refresh()
@@ -304,7 +305,7 @@ export default function TtsPage() {
         setError(r.error)
       }
     },
-    [markSheetChanges, workbookPath, refresh],
+    [applyTableEditsToCache, markSheetChanges, workbookPath, refresh],
   )
 
   return (

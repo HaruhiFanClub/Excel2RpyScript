@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AssetIndex, PreviewData } from '../../shared/ipc'
+import type { TableData } from '@e2r/core/table'
+import type { AssetIndex, CellEdit, PreviewData } from '../../shared/ipc'
 
 let convertSeq = 0
+let tableReadSeq = 0
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 interface SheetChangeState {
@@ -18,6 +20,10 @@ interface WorkspaceState {
   convertWorkbookPath: string
   converting: boolean
   convertError: string | null
+  tableData: TableData | null
+  tableWorkbookPath: string
+  tableLoading: boolean
+  tableError: string | null
   sheetChanges: SheetChangeState // 已保存到表格、但尚未应用到关联工程的 sheet
   assets: AssetIndex | null // 关联的 Ren'Py 工程资源索引（不持久化，启动时按 renpyDir 重扫）
   renpyDir: string // 关联工程时用户选择的目录（持久化，用于重开时重新关联）
@@ -27,6 +33,8 @@ interface WorkspaceState {
   setConvertResult: (result: PreviewData, workbookPath: string) => void
   clearConvertResult: () => void
   runConvert: (workbookPath?: string) => Promise<PreviewData | null>
+  loadTableData: (workbookPath?: string, opts?: { force?: boolean }) => Promise<TableData | null>
+  applyTableEditsToCache: (edits: CellEdit[], workbookPath?: string) => void
   markSheetChanges: (sheetNames: string[], workbookPath?: string) => void
   clearSheetChanges: (sheetNames?: string[], workbookPath?: string) => void
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
@@ -44,6 +52,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       convertWorkbookPath: '',
       converting: false,
       convertError: null,
+      tableData: null,
+      tableWorkbookPath: '',
+      tableLoading: false,
+      tableError: null,
       sheetChanges: { workbookPath: '', sheets: {} },
       assets: null,
       renpyDir: '',
@@ -53,6 +65,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           convertResult: null,
           convertWorkbookPath: '',
           convertError: null,
+          tableData: null,
+          tableWorkbookPath: '',
+          tableError: null,
           sheetChanges: { workbookPath, sheets: {} },
         })
         if (workbookPath) void get().runConvert(workbookPath)
@@ -66,6 +81,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             convertWorkbookPath: '',
             converting: false,
             convertError: null,
+            tableData: null,
+            tableWorkbookPath: '',
+            tableLoading: false,
+            tableError: null,
             sheetChanges: { workbookPath: '', sheets: {} },
           })
           return
@@ -78,6 +97,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             convertResult: null,
             convertWorkbookPath: '',
             convertError: null,
+            tableData: null,
+            tableWorkbookPath: '',
+            tableError: null,
             sheetChanges: { workbookPath: r.copyPath, sheets: {} },
           })
           void get().runConvert(r.copyPath)
@@ -88,6 +110,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             convertResult: null,
             convertWorkbookPath: '',
             convertError: null,
+            tableData: null,
+            tableWorkbookPath: '',
+            tableError: null,
             sheetChanges: { workbookPath: originalPath, sheets: {} },
           })
           void get().runConvert(originalPath)
@@ -141,6 +166,79 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         } finally {
           if (seq === convertSeq) set({ converting: false })
         }
+      },
+      loadTableData: async (workbookPath, opts) => {
+        const targetWorkbook = workbookPath ?? get().workbookPath
+        if (!targetWorkbook) {
+          set({ tableData: null, tableWorkbookPath: '', tableLoading: false, tableError: null })
+          return null
+        }
+
+        const current = get()
+        if (
+          !opts?.force &&
+          current.tableWorkbookPath === targetWorkbook &&
+          current.tableData
+        ) {
+          return current.tableData
+        }
+
+        const seq = ++tableReadSeq
+        set({ tableLoading: true, tableError: null })
+        try {
+          const r = await window.e2r.readTable(targetWorkbook)
+          if (seq !== tableReadSeq || get().workbookPath !== targetWorkbook) return null
+          if (!r.ok) {
+            set({ tableData: null, tableWorkbookPath: '', tableError: r.error })
+            return null
+          }
+          const next = { sheets: r.sheets }
+          set({ tableData: next, tableWorkbookPath: targetWorkbook, tableError: null })
+          return next
+        } catch (e) {
+          if (seq === tableReadSeq) {
+            set({ tableData: null, tableWorkbookPath: '', tableError: errMsg(e) })
+          }
+          return null
+        } finally {
+          if (seq === tableReadSeq) set({ tableLoading: false })
+        }
+      },
+      applyTableEditsToCache: (edits, workbookPath) => {
+        if (edits.length === 0) return
+        const targetWorkbook = workbookPath ?? get().workbookPath
+        set((state) => {
+          if (!state.tableData || state.tableWorkbookPath !== targetWorkbook) return {}
+
+          const bySheet = new Map<string, Map<number, CellEdit[]>>()
+          for (const edit of edits) {
+            let rows = bySheet.get(edit.sheet)
+            if (!rows) {
+              rows = new Map()
+              bySheet.set(edit.sheet, rows)
+            }
+            const rowEdits = rows.get(edit.excelRow) ?? []
+            rowEdits.push(edit)
+            rows.set(edit.excelRow, rowEdits)
+          }
+
+          let changed = false
+          const sheets = state.tableData.sheets.map((sheet) => {
+            const rowsByNumber = bySheet.get(sheet.name)
+            if (!rowsByNumber) return sheet
+            const rows = sheet.rows.map((row) => {
+              const rowEdits = rowsByNumber.get(row.excelRow)
+              if (!rowEdits) return row
+              changed = true
+              const cells = { ...row.cells }
+              for (const edit of rowEdits) cells[edit.col] = edit.value
+              return { ...row, cells }
+            })
+            return { ...sheet, rows }
+          })
+
+          return changed ? { tableData: { sheets } } : {}
+        })
       },
       markSheetChanges: (sheetNames, workbookPath) => {
         const before = get()
