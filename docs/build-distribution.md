@@ -1,6 +1,30 @@
 # 分发与打包
 
-目标：**一条命令**产出"打开即用"的安装包，TTS 引擎**全离线内置**，最终用户无需任何 Python/环境配置。
+目标：本地可一条命令产出安装包；GitHub Actions 可通过 tag 一键发版。TTS 引擎可选择全离线内置，未内置时远端 TTS 与其它功能仍可正常使用。
+
+## 云端一键发版
+
+1. 在 `notes/CHANGELOG-next.md` 写好本版更新日志。
+2. 运行：
+
+```bash
+pnpm release 0.1.1
+```
+
+脚本会同步 `package.json` / `packages/app/package.json` / `packages/core/package.json` 的版本号，归档 `notes/v0.1.1.md`，提交 `v0.1.1`，打注解 tag 并推送。tag push 触发 `.github/workflows/release.yml`：
+
+- `verify`：安装依赖、运行 `pnpm -r test` 与 `pnpm -r typecheck`。
+- `build-macos-arm64`：生成 macOS arm64 DMG。
+- `build-windows-x64`：生成 Windows x64 NSIS 安装包与 zip 免安装包。
+- `publish`：创建 GitHub Release，上传 `latest.json`，可选同步到 R2 并清理 Cloudflare `latest.json` 缓存。
+
+release environment 可配置这些 secrets：
+
+- macOS 签名：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`。
+- R2 镜像：`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_BUCKET`、`R2_PUBLIC_BASE`。
+- CDN 清理：`CLOUDFLARE_ZONE_ID`、`CLOUDFLARE_API_TOKEN`。
+
+不配置 R2 时，发版仍会上传 GitHub Release 和 GitHub 版 `latest.json`。
 
 ## 一条命令
 

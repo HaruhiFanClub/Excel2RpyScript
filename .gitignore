@@ -7,6 +7,9 @@
 /audio
 /dist
 /predef_ref
+/artifacts
+/dist-release
+/release-assets
 .DS_Store
 node_modules/
 dist/

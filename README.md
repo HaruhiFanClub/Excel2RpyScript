@@ -56,6 +56,15 @@ pnpm --filter @e2r/app dist:mac --skip-tts
 pnpm --filter @e2r/app dist:win --skip-tts
 ```
 
+云端一键发版：
+
+```bash
+# 先填写 notes/CHANGELOG-next.md
+pnpm release 0.1.1
+```
+
+脚本会同步版本号、归档更新日志、提交并打 `v0.1.1` 注解 tag；tag push 会触发 GitHub Actions 构建 macOS arm64 DMG、Windows x64 安装包和 zip 免安装包，并生成 `latest.json`。
+
 全离线内置 TTS 包需要在目标操作系统上设置 `E2R_TTS_CORE`，详见 `docs/build-distribution.md`。
 
 ## 工程同步语义

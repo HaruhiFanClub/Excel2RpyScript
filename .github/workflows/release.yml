@@ -1,0 +1,294 @@
+# 发版流水线：push tag / 手动 dispatch -> macOS arm64 + Windows x64 并行构建
+# -> GitHub Release -> 可选 R2 镜像 -> 可选 Cloudflare purge。
+#
+# 本地触发方式：
+#   1. 在 notes/CHANGELOG-next.md 写更新日志
+#   2. pnpm release 0.1.1
+#
+# GitHub 手动触发：
+#   Actions -> Release -> Run workflow，输入已存在的 tag（如 v0.1.1）。
+#
+# release environment 可选 secrets：
+#   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD  macOS Developer ID .p12 base64 与密码
+#   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET / R2_PUBLIC_BASE
+#   CLOUDFLARE_ZONE_ID / CLOUDFLARE_API_TOKEN
+#
+# 说明：CI 默认打不内置 TTS 核心的包。远端 TTS 与其它功能不受影响；
+# 全离线 TTS 包仍可在目标系统本地设置 E2R_TTS_CORE 后用 dist:* 构建。
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (例如 v0.1.1，必须已经存在)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.11.0"
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm -r test
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+  build-macos-arm64:
+    name: Build · macOS arm64
+    needs: verify
+    runs-on: macos-latest
+    environment: release
+    timeout-minutes: 45
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Import Apple signing certificate
+        if: env.APPLE_CERTIFICATE != ''
+        env:
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/build-cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A \
+            -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Disable signing when no certificate is configured
+        if: env.APPLE_CERTIFICATE == ''
+        run: echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm --filter @e2r/app build
+          pnpm --filter @e2r/app exec electron-builder --mac --arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: |
+            packages/app/release/*.dmg
+            packages/app/release/*.blockmap
+            packages/app/release/latest*.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  build-windows-x64:
+    name: Build · Windows x64
+    needs: verify
+    runs-on: windows-latest
+    environment: release
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer and portable zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm --filter @e2r/app build
+          pnpm --filter @e2r/app exec electron-builder --win --x64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            packages/app/release/*.exe
+            packages/app/release/*.zip
+            packages/app/release/*.blockmap
+            packages/app/release/latest*.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish
+    needs: [build-macos-arm64, build-windows-x64]
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_PUBLIC_BASE: ${{ secrets.R2_PUBLIC_BASE }}
+      CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Resolve tag and release notes
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          NOTES_FILE="release-notes.md"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            git tag -l --format='%(contents)' "$TAG" > "$NOTES_FILE"
+          fi
+          if [ ! -s "$NOTES_FILE" ] && [ -f "notes/$TAG.md" ]; then
+            cp "notes/$TAG.md" "$NOTES_FILE"
+          fi
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "Excel2Rpy $TAG" > "$NOTES_FILE"
+          fi
+          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Compose latest.json
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_NOTES_FILE: ${{ steps.meta.outputs.notes_file }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/ci-compose-latest-json.mjs
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find artifacts -type f \( \
+            -name "*.dmg" -o \
+            -name "*.exe" -o \
+            -name "*.zip" -o \
+            -name "*.blockmap" -o \
+            -name "*.yml" \
+          \) -exec cp {} release-assets/ \;
+          cp dist-release/latest.github.json release-assets/latest.json
+          ls -lh release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Excel2Rpy ${{ steps.meta.outputs.tag }}
+          body_path: ${{ steps.meta.outputs.notes_file }}
+          draft: false
+          prerelease: false
+          files: release-assets/*
+          fail_on_unmatched_files: true
+
+      - name: Upload mirror to R2
+        if: env.R2_ACCOUNT_ID != '' && env.R2_ACCESS_KEY_ID != '' && env.R2_SECRET_ACCESS_KEY != '' && env.R2_BUCKET != '' && env.R2_PUBLIC_BASE != ''
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: node scripts/ci-upload-r2.mjs
+
+      - name: Prune old versions on R2
+        if: env.R2_ACCOUNT_ID != '' && env.R2_ACCESS_KEY_ID != '' && env.R2_SECRET_ACCESS_KEY != '' && env.R2_BUCKET != ''
+        env:
+          CURRENT_VERSION: ${{ steps.meta.outputs.version }}
+          RETAIN_VERSIONS: ${{ vars.R2_RETAIN_VERSIONS || '2' }}
+        run: node scripts/ci-prune-r2.mjs
+
+      - name: Purge Cloudflare cache for latest.json
+        if: env.CLOUDFLARE_ZONE_ID != '' && env.CLOUDFLARE_API_TOKEN != '' && env.R2_PUBLIC_BASE != ''
+        run: node scripts/ci-purge-cf.mjs
+
+      - name: Summary
+        run: |
+          echo "### Release ${{ steps.meta.outputs.tag }} published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- GitHub: https://github.com/${{ github.repository }}/releases/tag/${{ steps.meta.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${R2_PUBLIC_BASE}" ]; then
+            echo "- R2: ${R2_PUBLIC_BASE}/latest.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
