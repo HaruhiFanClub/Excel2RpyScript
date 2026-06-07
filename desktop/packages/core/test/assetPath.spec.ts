@@ -19,4 +19,15 @@ describe('resolveAssetTarget', () => {
     expect(resolveAssetTarget('../secret.txt', '/proj/game', null)).toBeNull()
     expect(resolveAssetTarget('audio/../../secret.wav', null, '/tmp/audio')).toBeNull()
   })
+
+  it('Windows 路径：允许根目录内资源并拒绝越界', () => {
+    expect(resolveAssetTarget('images/kyon.png', 'C:\\proj\\game', null)).toBe(
+      'C:\\proj\\game\\images\\kyon.png',
+    )
+    expect(resolveAssetTarget('audio/阿虚_x.wav', null, 'C:\\tmp\\proj\\audio')).toBe(
+      'C:\\tmp\\proj\\audio\\阿虚_x.wav',
+    )
+    expect(resolveAssetTarget('audio/../../secret.wav', null, 'C:\\tmp\\audio')).toBeNull()
+    expect(resolveAssetTarget('D:\\secret.wav', 'C:\\proj\\game', null)).toBeNull()
+  })
 })

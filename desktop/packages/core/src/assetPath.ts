@@ -1,4 +1,10 @@
-import { normalize, join } from 'node:path'
+import { posix, win32 } from 'node:path'
+
+const looksWindowsPath = (path: string): boolean => /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\')
+
+function pathApiFor(root: string): typeof posix {
+  return looksWindowsPath(root) ? win32 : posix
+}
 
 // 解析 asset:// 请求到磁盘绝对路径（含越界防护）。
 //  - 关联工程：一切相对工程 game 目录解析（图片/音频/转场等）。
@@ -10,9 +16,12 @@ export function resolveAssetTarget(
   audioDir: string | null,
 ): string | null {
   const within = (root: string, r: string): string | null => {
-    const base = normalize(root)
-    const abs = normalize(join(base, r))
-    return abs === base || abs.startsWith(base + (base.endsWith('/') ? '' : '/')) ? abs : null
+    const path = pathApiFor(root)
+    const base = path.resolve(root)
+    const abs = path.resolve(base, r)
+    const rel = path.relative(base, abs)
+    const escapes = rel === '..' || rel.startsWith(`..${path.sep}`)
+    return rel === '' || (!escapes && !path.isAbsolute(rel)) ? abs : null
   }
   if (gameRoot) return within(gameRoot, rel)
   if (rel.startsWith('audio/') && audioDir) return within(audioDir, rel.slice('audio/'.length))
