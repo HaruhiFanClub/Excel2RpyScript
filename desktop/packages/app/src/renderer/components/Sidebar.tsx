@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useThemeStore } from '../stores/useThemeStore'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
+import appIcon from '../assets/app-icon.png'
 
 export type PageId = 'convert' | 'table' | 'tts' | 'characters' | 'check' | 'project'
 
@@ -79,9 +80,12 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
       <div className="drag h-11 shrink-0" />
 
       <div className="drag flex items-center gap-2.5 px-4 pb-4">
-        <div className="nodrag flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-sky-600 text-[12px] font-bold text-white shadow-sm shadow-sky-500/25">
-          E2R
-        </div>
+        <img
+          src={appIcon}
+          alt=""
+          draggable={false}
+          className="nodrag h-9 w-9 shrink-0 rounded-lg shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+        />
         <div className="leading-tight">
           <h1 className="text-[14px] font-semibold text-app-text">Excel2Rpy</h1>
           <span className="text-[11px] text-app-muted">Script Workbench</span>

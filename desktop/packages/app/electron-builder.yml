@@ -1,5 +1,6 @@
 appId: com.haruhifanclub.excel2rpy
 productName: Excel2Rpy
+icon: build/icon
 directories:
   output: release
   buildResources: build
@@ -12,13 +13,18 @@ files:
 asar: true
 asarUnpack:
   - resources/**
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 mac:
+  icon: build/icon.icns
   target:
     - dmg
   category: public.app-category.productivity
   artifactName: ${productName}-${version}-${arch}.${ext}
   # 内置冻结二进制 + dylib 需签名/公证（CI 配置 identity）
 win:
+  icon: build/icon.ico
   target:
     - nsis
   artifactName: ${productName}-${version}-${arch}.${ext}
