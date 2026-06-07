@@ -1,6 +1,6 @@
 // 立绘「左/中/右 三列」模型（纯逻辑，渲染进程可安全导入）。
 // 表格里用户只填「角色 编号」，位置由所在列 + 每角色位置约定自动推导。
-// 约定默认 `<角色>_left` / `<角色>_mid` / `<角色>_right`（与真实表格一致，可逐角色覆盖）。
+// 未配置角色默认输出 Ren'Py 内置位置 left / mid / right；需要自定义 transform 时逐角色覆盖。
 
 export type Slot = 'left' | 'mid' | 'right'
 export const SLOTS: Slot[] = ['left', 'mid', 'right']
@@ -21,8 +21,8 @@ export interface SpriteSlots {
 
 const empty = (): SpriteSlots => ({ left: '', mid: '', right: '', other: '' })
 
-export function defaultPosToken(char: string, slot: Slot): string {
-  return `${char}_${slot}`
+export function defaultPosToken(_char: string, slot: Slot): string {
+  return slot
 }
 
 export function posToken(char: string, slot: Slot, cfg?: SpritePositions): string {

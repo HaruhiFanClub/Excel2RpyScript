@@ -10,10 +10,20 @@ import {
   Users,
   Server,
   AudioLines,
+  MoveHorizontal,
 } from 'lucide-react'
 import type { TtsConfig, RoleModel, VoiceCmd } from '@e2r/core/tts'
 import { isRoleEnabled } from '@e2r/core/tts'
+import type { Slot } from '@e2r/core/sprites'
 import { useCharactersStore } from '../stores/useCharactersStore'
+import { useWorkspaceStore } from '../stores/useWorkspaceStore'
+
+const SLOTS: { slot: Slot; label: string }[] = [
+  { slot: 'left', label: '左' },
+  { slot: 'mid', label: '中' },
+  { slot: 'right', label: '右' },
+]
+const NO_TRANSFORMS: string[] = [] // 稳定空数组引用：避免 zustand selector 每次返回新数组导致无限渲染
 
 // 保序重命名 Record 的某个键
 function renameKey<T>(
@@ -42,7 +52,9 @@ export default function CharactersPage() {
   const loaded = useCharactersStore((s) => s.loaded)
   const load = useCharactersStore((s) => s.load)
   const update = useCharactersStore((s) => s.update)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // 关联工程时可选的 transform；selector 返回稳定引用（数组本体或 undefined），避免无限渲染
+  const transforms = useWorkspaceStore((s) => s.assets?.transforms) ?? NO_TRANSFORMS
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['测试角色']))
 
   useEffect(() => {
     if (!loaded) void load()
@@ -119,6 +131,13 @@ export default function CharactersPage() {
   const setAliases = (name: string, raw: string) => {
     const aliases = raw.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
     setRole(name, aliases.length ? { aliases } : { aliases: [] })
+  }
+
+  const setSpritePos = (name: string, slot: Slot, raw: string) => {
+    const cur = config.roleModelMapping[name]?.spritePos ?? {}
+    const next = { ...cur, [slot]: raw.trim() || undefined }
+    const has = next.left || next.mid || next.right
+    setRole(name, { spritePos: has ? next : undefined })
   }
 
   // ---- 语气（语音指令）级操作 ----
@@ -277,6 +296,38 @@ export default function CharactersPage() {
                       className="glass-input max-w-[420px] text-[12px]"
                     />
                   </label>
+
+                  {/* 立绘位置（左/中/右）：留空即用 Ren'Py 内置位置 left/mid/right */}
+                  <div className="mb-3">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <MoveHorizontal size={13} className="text-app-muted" />
+                      <h4 className="text-[12px] font-semibold text-app-text">立绘位置</h4>
+                      <span className="text-[11px] text-app-muted">
+                        留空即用 <code>left / mid / right</code>
+                        {transforms.length > 0 && ` · 可从工程 ${transforms.length} 个 transform 选择`}
+                      </span>
+                    </div>
+                    <datalist id={`e2r-transforms-${name}`}>
+                      {transforms.map((t) => (
+                        <option key={t} value={t} />
+                      ))}
+                    </datalist>
+                    <div className="grid max-w-[560px] grid-cols-3 gap-1.5">
+                      {SLOTS.map(({ slot, label }) => (
+                        <label key={slot} className="flex flex-col gap-1">
+                          <span className="text-[10px] text-app-muted">{label}</span>
+                          <input
+                            key={`${name}-${slot}-${role.spritePos?.[slot] ?? ''}`}
+                            list={`e2r-transforms-${name}`}
+                            defaultValue={role.spritePos?.[slot] ?? ''}
+                            onBlur={(e) => setSpritePos(name, slot, e.target.value)}
+                            placeholder={slot}
+                            className="glass-input font-mono text-[11px]"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="mb-1.5 flex items-center gap-2">
                     <h4 className="text-[12px] font-semibold text-app-text">语气</h4>

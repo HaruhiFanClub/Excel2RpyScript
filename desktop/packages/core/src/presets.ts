@@ -1,5 +1,6 @@
 // 自动从 config.json 生成的内置预设（凉宫春日，远端服务）。请勿手改；更新请重新生成。
 import { deriveTone, type TtsConfig } from "./tts"
+import type { SpritePos } from "./sprites"
 
 export interface BuiltinPreset {
   id: string
@@ -9,6 +10,25 @@ export interface BuiltinPreset {
 
 // 内置远端角色的 API 端点（不在 UI 展示）
 const HARUHI_REMOTE_API = "https://tts.haruyuki.cn/"
+
+// 内置凉宫角色使用现有 Ren'Py 工程中的自定义 transform 前缀；角色本身锁定，不在 UI 暴露编辑。
+const HARUHI_ROLE_SPRITE_PREFIX: Record<string, string> = {
+  "长门有希": "yuki",
+  "阿虚": "kyon",
+  "长门有希（消失）": "yuki",
+  "古泉一树": "itsuki",
+  "朝比奈实玖瑠": "mikuru",
+  "朝比奈实玖瑠（大）": "mikuruw",
+  "鹤屋学姐": "tsuruya",
+  "朝仓凉子": "asakura",
+  "虚妹": "kyon_s",
+  "凉宫春日": "haruhi",
+  "中河": "nakagawa",
+}
+
+function prefixedSpritePos(prefix: string): SpritePos {
+  return { left: `${prefix}_left`, mid: `${prefix}_mid`, right: `${prefix}_right` }
+}
 
 // 参考音频所在文件夹名 → 角色名（把每条语音指令归属到对应内置角色）
 const FOLDER_TO_ROLE: Record<string, string> = {
@@ -36,8 +56,16 @@ function refFolder(p: string): string {
 function enrichBuiltinRemote(base: TtsConfig): TtsConfig {
   const roleModelMapping: TtsConfig["roleModelMapping"] = {}
   for (const [name, m] of Object.entries(base.roleModelMapping)) {
+    const spritePrefix = HARUHI_ROLE_SPRITE_PREFIX[name]
+    const aliases = spritePrefix ? Array.from(new Set([...(m.aliases ?? []), spritePrefix])) : m.aliases
     roleModelMapping[name] = {
       ...m,
+      ...(aliases?.length ? { aliases } : {}),
+      ...(m.spritePos
+        ? { spritePos: m.spritePos }
+        : spritePrefix
+          ? { spritePos: prefixedSpritePos(spritePrefix) }
+          : {}),
       enabled: m.enabled ?? true,
       builtin: true,
       apiBaseUrl: m.apiBaseUrl ?? HARUHI_REMOTE_API,

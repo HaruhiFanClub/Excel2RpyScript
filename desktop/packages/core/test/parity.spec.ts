@@ -42,6 +42,9 @@ describe('Audio 名称强制（float→int、补 .mp3、加 audio/ 前缀）', (
   it('已有 .mp3 不重复', () => {
     expect(new Audio(textCell('x.mp3'), 'play').render()).toBe('play music "audio/x.mp3"')
   })
+  it('已有其它音频扩展名不强制改为 .mp3', () => {
+    expect(new Audio(textCell('x.ogg'), 'play').render()).toBe('play music "audio/x.ogg"')
+  })
   it('stop 忽略名字', () => {
     expect(new Audio(textCell('whatever'), 'stop').render()).toBe('stop music')
   })

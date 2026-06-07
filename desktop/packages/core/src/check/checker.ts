@@ -1,7 +1,7 @@
 // 表格检查（移植自 handler/proofreader.py 并增强）。
 // 产出结构化 error / warn / info 三级问题。检查是增强功能，不要求与旧 log.txt 逐字对齐：
-// 已修正旧版若干噪音/误报（tts/adv 大小写、立绘每行误报转场、自定义立绘位置不再硬报错）。
-import { ElementColNumMapping, PositionMapping, TransitionMapping } from '../settings/converterSetting'
+// 已修正旧版若干噪音/误报（tts/adv 大小写、立绘每行误报转场、自定义立绘位置不检查）。
+import { ElementColNumMapping, TransitionMapping } from '../settings/converterSetting'
 import { asStr, truthy, isNumeric, type CellValue } from '../parse/cellValue'
 import type { ParsedSheet } from '../convert/converter'
 
@@ -20,7 +20,7 @@ export interface CheckOptions {
   bgGap?: number // 连续多少行未换背景 → warn
   musicGap?: number // 连续多少行未换音乐 → warn
   maxTextLen?: number // 单行台词字数上限
-  knownPositions?: string[] // 关联工程时的 transform/Position 名；提供后校验立绘位置真实存在
+  knownPositions?: string[] // 保留旧调用兼容；自定义立绘位置不再检查
 }
 
 const DEFAULTS: Required<Pick<CheckOptions, 'faceGap' | 'bgGap' | 'musicGap' | 'maxTextLen'>> = {
@@ -30,8 +30,6 @@ const DEFAULTS: Required<Pick<CheckOptions, 'faceGap' | 'bgGap' | 'musicGap' | '
   maxTextLen: 60,
 }
 
-// 合法内置位置：left/right/center/truecenter + mid（映射到 center）
-const BUILTIN_POS = new Set([...Object.keys(PositionMapping), 'center'])
 const ROW_OFFSET = 8
 
 function cell(row: CellValue[], key: keyof typeof ElementColNumMapping): CellValue {
@@ -41,7 +39,6 @@ function cell(row: CellValue[], key: keyof typeof ElementColNumMapping): CellVal
 export function checkSheets(sheets: ParsedSheet[], options?: CheckOptions): CheckIssue[] {
   const opt = { ...DEFAULTS, ...options }
   const sheetNames = new Set(sheets.map((s) => s.name))
-  const knownPos = options?.knownPositions ? new Set(options.knownPositions) : null
   const issues: CheckIssue[] = []
 
   for (const sheet of sheets) {
@@ -92,15 +89,7 @@ export function checkSheets(sheets: ParsedSheet[], options?: CheckOptions): Chec
               add('warn', 'sprite-format', `立绘"${seg}"建议按"角色 编号 位置"填写`)
             }
           } else {
-            const pos = tokens[tokens.length - 1] ?? ''
-            if (!BUILTIN_POS.has(pos)) {
-              if (knownPos) {
-                if (!knownPos.has(pos))
-                  add('error', 'sprite-pos-undefined', `立绘位置"${pos}"在 Ren'Py 工程中未定义`)
-              } else {
-                add('info', 'sprite-custom-pos', `自定义立绘位置"${pos}"，关联 Ren'Py 工程后校验`)
-              }
-            }
+            // 自定义位置 token 交给转换器原样透传，不在检查页判定合法性。
           }
         }
         void transOk // 立绘每行变化时不再强制要求转场（旧版此处过于噪音）

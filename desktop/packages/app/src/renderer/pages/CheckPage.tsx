@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CircleAlert, TriangleAlert, Info, ShieldCheck, RefreshCw, FileSpreadsheet } from 'lucide-react'
+import {
+  CircleAlert,
+  TriangleAlert,
+  Info,
+  ShieldCheck,
+  RefreshCw,
+  FileSpreadsheet,
+} from 'lucide-react'
 import type { CheckIssue, CheckSummary } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { DiffPanel } from '../components/DiffPanel'
+import { SheetTabs } from '../components/dataGrid'
 
 type Severity = CheckIssue['severity']
 type Filter = 'all' | Severity
@@ -36,6 +44,7 @@ export default function CheckPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
+  const [activeSheet, setActiveSheet] = useState('')
 
   const run = async (path: string) => {
     setLoading(true)
@@ -67,6 +76,27 @@ export default function CheckPage() {
     () => (issues ?? []).filter((i) => filter === 'all' || i.severity === filter),
     [issues, filter],
   )
+
+  const issueSheets = useMemo(() => {
+    const byName = new Map<string, CheckIssue[]>()
+    for (const issue of shown) {
+      const group = byName.get(issue.sheet)
+      if (group) group.push(issue)
+      else byName.set(issue.sheet, [issue])
+    }
+    return [...byName.entries()].map(([name, items]) => ({ name, items }))
+  }, [shown])
+
+  useEffect(() => {
+    if (issueSheets.length === 0) {
+      setActiveSheet('')
+      return
+    }
+    if (!issueSheets.some((s) => s.name === activeSheet)) setActiveSheet(issueSheets[0]!.name)
+  }, [activeSheet, issueSheets])
+
+  const currentSheet = issueSheets.find((s) => s.name === activeSheet) ?? issueSheets[0]
+  const currentIssues = currentSheet?.items ?? []
 
   const total = summary ? summary.error + summary.warn + summary.info : 0
   const [mode, setMode] = useState<'check' | 'diff'>('check')
@@ -126,6 +156,14 @@ export default function CheckPage() {
         </div>
       )}
 
+      {mode === 'check' && issueSheets.length > 0 && (
+        <SheetTabs
+          tabs={issueSheets.map((s) => ({ key: s.name, label: s.name, count: s.items.length }))}
+          activeKey={currentSheet?.name ?? ''}
+          onChange={setActiveSheet}
+        />
+      )}
+
       {mode === 'check' && (
       <section className="glass-card custom-scrollbar min-h-0 flex-1 overflow-auto">
         {error ? (
@@ -144,13 +182,13 @@ export default function CheckPage() {
           </div>
         ) : (
           <ul className="divide-y divide-app-border">
-            {shown.map((it, i) => {
+            {currentIssues.map((it, i) => {
               const m = META[it.severity]
               return (
                 <li key={i} className="flex items-start gap-3 px-4 py-2.5 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]">
                   <m.Icon size={15} className={`mt-0.5 shrink-0 ${m.cls}`} />
                   <span className="shrink-0 rounded bg-black/5 px-1.5 py-0.5 font-mono text-[11px] text-app-muted dark:bg-white/10">
-                    {it.sheet}:{it.row}
+                    {it.row}
                   </span>
                   <span className="flex-1 text-[13px] text-app-text">{it.message}</span>
                   <code className="shrink-0 text-[11px] text-app-muted">{it.code}</code>

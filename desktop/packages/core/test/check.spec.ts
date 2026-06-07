@@ -67,18 +67,19 @@ describe('checker 基本规则', () => {
     expect(codes(i)).toContain('role-name-whitespace')
   })
 
-  it('自定义立绘位置 → info（未关联工程）', () => {
+  it('自定义立绘位置不报问题', () => {
     const i = checkSheets([
       sheet('Sheet1', [row({ role_name: 'A', text: 'x', character: 'kyon 0012 kyon_left' })]),
     ])
-    expect(i.find((x) => x.code === 'sprite-custom-pos')?.severity).toBe('info')
+    expect(codes(i)).not.toContain('sprite-custom-pos')
+    expect(codes(i)).not.toContain('sprite-pos-undefined')
     expect(codes(i)).not.toContain('bad-transition')
   })
 
-  it('关联工程后校验立绘位置：未定义 → error，已定义 → 通过', () => {
+  it('关联工程后也不校验自定义立绘位置', () => {
     const rows = [row({ role_name: 'A', text: 'x', character: 'kyon 0012 kyon_left' })]
     const bad = checkSheets([sheet('Sheet1', rows)], { knownPositions: ['haruhi_mid'] })
-    expect(codes(bad)).toContain('sprite-pos-undefined')
+    expect(codes(bad)).not.toContain('sprite-pos-undefined')
     const ok = checkSheets([sheet('Sheet1', rows)], { knownPositions: ['kyon_left'] })
     expect(codes(ok)).not.toContain('sprite-pos-undefined')
   })

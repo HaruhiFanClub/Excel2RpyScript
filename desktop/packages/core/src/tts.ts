@@ -3,6 +3,7 @@
 import { ElementColNumMapping } from './settings/converterSetting'
 import { asStr, EMPTY, type CellValue } from './parse/cellValue'
 import type { ParsedSheet } from './convert/converter'
+import type { SpritePos, SpritePositions } from './sprites'
 
 function col(row: CellValue[], key: keyof typeof ElementColNumMapping): CellValue {
   return row[ElementColNumMapping[key]] ?? EMPTY
@@ -12,8 +13,11 @@ export interface TtsJob {
   sheetIndex: number // 绝对 sheet 索引（0 基）
   sheetName: string
   rowIndex: number // 解析行序号（0 基）；Excel 行号 = rowIndex + 8
+  excelRow: number // 真实 Excel 行号（1 基）；UI/回写使用
   roleName: string // 前向填充后的角色名
   text: string // 待合成文本（有 col18 选填语音文本则用之，否则用 col1 台词）
+  dialogueText: string // 原始台词列（col1）
+  voiceText: string // 选填语音文本列（col18）
   voiceCmd: string // 语音指令（col24）
   outputName: string // {role}_sheet{sheetIndex+1}_row{rowIndex+8}_synthesized.wav
 }
@@ -29,7 +33,7 @@ export interface EnrichedJob extends TtsJob {
 
 // 仅对 语音列(col23)=tts（不分大小写）的行规划合成任务，角色名前向填充。
 // 合成文本自动取舍：有「选填语音文本」(col18) 就用它，否则用台词(col1)，无需用户勾选。
-export function planTtsJobs(sheets: ParsedSheet[]): TtsJob[] {
+export function planTtsJobs(sheets: ParsedSheet[], excelRows?: number[][]): TtsJob[] {
   const jobs: TtsJob[] = []
   sheets.forEach((sheet, sheetIndex) => {
     let current: string | null = null
@@ -39,13 +43,17 @@ export function planTtsJobs(sheets: ParsedSheet[]): TtsJob[] {
       const role = current === null ? 'None' : current
       if (asStr(col(row, 'voice')).trim().toLowerCase() !== 'tts') return
       const voiceText = asStr(col(row, 'voice_text'))
-      const text = voiceText.trim() ? voiceText : asStr(col(row, 'text'))
+      const dialogueText = asStr(col(row, 'text'))
+      const text = voiceText.trim() ? voiceText : dialogueText
       jobs.push({
         sheetIndex,
         sheetName: sheet.name,
         rowIndex,
+        excelRow: excelRows?.[sheetIndex]?.[rowIndex] ?? rowIndex + 8,
         roleName: role,
         text,
+        dialogueText,
+        voiceText,
         voiceCmd: asStr(col(row, 'voice_cmd')),
         outputName: `${role}_sheet${sheetIndex + 1}_row${rowIndex + 8}_synthesized.wav`,
       })
@@ -67,6 +75,7 @@ export interface RoleModel {
   enabled?: boolean // 是否在软件中启用（启用才进表格角色下拉、语音指令过滤）；缺省视为启用
   builtin?: boolean // 内置远端角色（凉宫春日系列）：锁定，不可展开/编辑/删除，只能勾选
   apiBaseUrl?: string // 远端角色专属端点（不在 UI 展示）；为空表示内嵌角色
+  spritePos?: SpritePos // 立绘 左/中/右 位置 token（覆盖默认 left/mid/right）；内置凉宫角色已带前缀配置
 }
 export interface VoiceCmd {
   refAudioPath: string
@@ -120,6 +129,19 @@ export function enabledRoleNames(cfg: TtsConfig): string[] {
     .map(([name]) => name)
 }
 
+// 由角色配置派生出立绘位置表（供表格 parseSprites/serializeSprites 用）：
+// 按角色名 + 其别名建索引，使表格里立绘字符名（可能是别名，如 kyon）也能命中该角色的自定义位置。
+export function spritePositionsFromConfig(cfg: TtsConfig): SpritePositions {
+  const out: SpritePositions = {}
+  for (const [name, m] of Object.entries(cfg.roleModelMapping)) {
+    const p = m.spritePos
+    if (!p || !(p.left || p.mid || p.right)) continue
+    out[name] = p
+    for (const a of m.aliases ?? []) out[a] = p
+  }
+  return out
+}
+
 // 某角色名下的语音指令（语气）列表：按 voiceCmd.role 归一到该角色。
 // 未配置任何归属时回退「全部指令」（兼容尚未分组的配置）。
 export function tonesForRole(cfg: TtsConfig, name: string): string[] {
@@ -145,6 +167,7 @@ export function parseLegacyTtsConfig(json: unknown): TtsConfig {
       enabled?: boolean
       builtin?: boolean
       api_base_url?: string
+      sprite_pos?: { left?: string; mid?: string; right?: string }
     }
   >
   const cmdSrc = (j['voice_cmd_mapping'] ?? {}) as Record<
@@ -160,6 +183,15 @@ export function parseLegacyTtsConfig(json: unknown): TtsConfig {
       ...(typeof v.enabled === 'boolean' ? { enabled: v.enabled } : {}),
       ...(v.builtin ? { builtin: true } : {}),
       ...(v.api_base_url ? { apiBaseUrl: v.api_base_url } : {}),
+      ...(v.sprite_pos && (v.sprite_pos.left || v.sprite_pos.mid || v.sprite_pos.right)
+        ? {
+            spritePos: {
+              ...(v.sprite_pos.left ? { left: v.sprite_pos.left } : {}),
+              ...(v.sprite_pos.mid ? { mid: v.sprite_pos.mid } : {}),
+              ...(v.sprite_pos.right ? { right: v.sprite_pos.right } : {}),
+            },
+          }
+        : {}),
     }
   const voiceCmdMapping: Record<string, VoiceCmd> = {}
   for (const [k, v] of Object.entries(cmdSrc))
@@ -211,6 +243,7 @@ export function serializeTtsConfig(cfg: TtsConfig): unknown {
       enabled?: boolean
       builtin?: boolean
       api_base_url?: string
+      sprite_pos?: { left?: string; mid?: string; right?: string }
     }
   > = {}
   for (const [k, v] of Object.entries(cfg.roleModelMapping))
@@ -221,6 +254,9 @@ export function serializeTtsConfig(cfg: TtsConfig): unknown {
       ...(typeof v.enabled === 'boolean' ? { enabled: v.enabled } : {}),
       ...(v.builtin ? { builtin: true } : {}),
       ...(v.apiBaseUrl ? { api_base_url: v.apiBaseUrl } : {}),
+      ...(v.spritePos && (v.spritePos.left || v.spritePos.mid || v.spritePos.right)
+        ? { sprite_pos: v.spritePos }
+        : {}),
     }
   const cmd: Record<
     string,

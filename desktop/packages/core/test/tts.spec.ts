@@ -8,6 +8,7 @@ import {
   resolveRoleKey,
   enabledRoleNames,
   tonesForRole,
+  spritePositionsFromConfig,
 } from '../src/tts'
 import { builtinPreset, BUILTIN_PRESETS } from '../src/presets'
 import { runPipeline, type ParsedSheet } from '../src/index'
@@ -58,7 +59,9 @@ describe('planTtsJobs', () => {
       sheet('S', [row({ role_name: 'A', text: '中文', voice: 'tts', voice_cmd: 'c' })]),
     ]
     expect(planTtsJobs(withVt)[0]!.text).toBe('日文')
+    expect(planTtsJobs(withVt)[0]).toMatchObject({ dialogueText: '中文', voiceText: '日文' })
     expect(planTtsJobs(onlyText)[0]!.text).toBe('中文')
+    expect(planTtsJobs(onlyText)[0]).toMatchObject({ dialogueText: '中文', voiceText: '' })
   })
 })
 
@@ -166,9 +169,20 @@ describe('角色配置 helpers', () => {
     const cfg = builtinPreset('haruhi-remote')!
     expect(cfg.roleModelMapping['凉宫春日']?.builtin).toBe(true)
     expect(cfg.roleModelMapping['凉宫春日']?.apiBaseUrl).toBeTruthy()
+    expect(cfg.roleModelMapping['凉宫春日']?.aliases).toContain('haruhi')
+    expect(cfg.roleModelMapping['凉宫春日']?.spritePos).toEqual({
+      left: 'haruhi_left',
+      mid: 'haruhi_mid',
+      right: 'haruhi_right',
+    })
     expect(cfg.voiceCmdMapping['haruhi_1']?.role).toBe('凉宫春日')
     expect(tonesForRole(cfg, '凉宫春日')).toContain('haruhi_1')
     expect(tonesForRole(cfg, '凉宫春日')).not.toContain('kyon_1')
+    expect(spritePositionsFromConfig(cfg)['haruhi']).toEqual({
+      left: 'haruhi_left',
+      mid: 'haruhi_mid',
+      right: 'haruhi_right',
+    })
   })
 
   it('resolveRoleKey 命中别名，未命中原样返回', () => {
@@ -177,6 +191,23 @@ describe('角色配置 helpers', () => {
     })
     expect(resolveRoleKey(cfg, 'Kyon')).toBe('阿虚')
     expect(resolveRoleKey(cfg, '未知')).toBe('未知')
+  })
+
+  it('sprite_pos 往返 + spritePositionsFromConfig 按角色名与别名建图', () => {
+    const src = {
+      role_model_mapping: {
+        阿虚: { gpt: 'g', sovits: 's', aliases: ['kyon'], sprite_pos: { left: 'kyon_l', mid: 'kyon_m' } },
+      },
+    }
+    const cfg = parseLegacyTtsConfig(src)
+    expect(cfg.roleModelMapping['阿虚']?.spritePos).toEqual({ left: 'kyon_l', mid: 'kyon_m' })
+    const map = spritePositionsFromConfig(cfg)
+    expect(map['阿虚']).toEqual({ left: 'kyon_l', mid: 'kyon_m' })
+    expect(map['kyon']).toEqual({ left: 'kyon_l', mid: 'kyon_m' }) // 别名也命中
+    const round = serializeTtsConfig(cfg) as {
+      role_model_mapping: Record<string, { sprite_pos?: unknown }>
+    }
+    expect(round.role_model_mapping['阿虚']?.sprite_pos).toEqual({ left: 'kyon_l', mid: 'kyon_m' })
   })
 
   it('enabledRoleNames 仅含启用角色（缺省视为启用）', () => {
