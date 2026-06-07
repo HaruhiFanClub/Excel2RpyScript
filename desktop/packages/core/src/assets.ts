@@ -38,6 +38,13 @@ export function audioRefName(raw: string): string | null {
   return v.startsWith('循环') ? v.slice('循环'.length).trim() : v
 }
 
+// rpy 代码里音频引用的实际文件名：与 model/element.ts 的 Audio 一致——
+// 末尾不是 .mp3 就补 .mp3（rpy 路径形如 audio/<这个名字>）。
+export function rpyAudioFilename(name: string): string {
+  const parts = name.split('.')
+  return (parts[parts.length - 1] ?? '').toLowerCase() === 'mp3' ? name : name + '.mp3'
+}
+
 // 常见纯色背景词（无文件，用色块预览）
 export const COLOR_WORDS: Record<string, string> = {
   white: '#ffffff',

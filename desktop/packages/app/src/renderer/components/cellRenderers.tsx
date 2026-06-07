@@ -12,12 +12,14 @@ import {
 import { toneFor, type TtsConfig } from '@e2r/core/tts'
 import { assetUrl } from '../lib/asset'
 
+export type WsAssetType = 'background' | 'sprite' | 'music' | 'sound'
+
 export interface GridContext {
   assets: AssetMaps | null
   ttsConfig: TtsConfig | null
   onImage: (url: string, title: string) => void
   onAudio: (url: string, title: string) => void
-  onImport: (category: 'image' | 'audio', name: string) => void
+  onImport: (kind: WsAssetType, name: string) => void
 }
 
 const ctxOf = (p: CustomCellRendererProps): GridContext => p.context as GridContext
@@ -94,7 +96,7 @@ export function SpriteSlotCell(p: CustomCellRendererProps) {
               />
             )}
             <span className="truncate text-[12px]">{name}</span>
-            {!rel && ctx.assets && <ImportBtn onClick={() => ctx.onImport('image', name)} />}
+            {!rel && <ImportBtn onClick={() => ctx.onImport('sprite', name)} />}
           </span>
         )
       })}
@@ -182,7 +184,7 @@ export function BgCell(p: CustomCellRendererProps) {
   return (
     <div className="flex h-full items-center gap-1.5">
       <span className="truncate text-[12px]">{raw}</span>
-      {ctx.assets && <ImportBtn onClick={() => ctx.onImport('image', raw)} />}
+      <ImportBtn onClick={() => ctx.onImport('background', raw)} />
     </div>
   )
 }
@@ -209,7 +211,9 @@ export function AudioCell(p: CustomCellRendererProps) {
         <Music size={12} className="shrink-0 text-app-muted" />
       )}
       <span className="truncate text-[12px]">{raw}</span>
-      {!rel && name && ctx.assets && <ImportBtn onClick={() => ctx.onImport('audio', name)} />}
+      {!rel && name && (
+        <ImportBtn onClick={() => ctx.onImport(p.colDef?.field === 'sound' ? 'sound' : 'music', name)} />
+      )}
     </div>
   )
 }

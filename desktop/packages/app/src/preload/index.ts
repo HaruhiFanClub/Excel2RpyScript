@@ -16,6 +16,8 @@ import type {
   ProjectManifest,
   ProjectReadResult,
   ProjectResult,
+  AssetImportResult,
+  WsAssetType,
   SaveResult,
   TableResult,
   TtsConfig,
@@ -57,8 +59,8 @@ const api: E2rApi = {
   diff: (oldPath: string, newPath: string): Promise<DiffResult> =>
     ipcRenderer.invoke('diff', oldPath, newPath),
   linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
-  importAsset: (category: 'image' | 'audio', name: string): Promise<ProjectResult> =>
-    ipcRenderer.invoke('asset:import', category, name),
+  importAsset: (kind: WsAssetType, name: string, xlsxPath: string): Promise<AssetImportResult> =>
+    ipcRenderer.invoke('asset:import', kind, name, xlsxPath),
   ttsCharacters: (): Promise<TtsConfig> => ipcRenderer.invoke('tts:characters'),
   ttsSaveCharacters: (config: TtsConfig): Promise<SaveResult> =>
     ipcRenderer.invoke('tts:saveCharacters', config),

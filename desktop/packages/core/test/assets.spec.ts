@@ -7,6 +7,7 @@ import {
   resolveImage,
   resolveAudio,
   audioRefName,
+  rpyAudioFilename,
   type AssetMaps,
 } from '../src/assets'
 import { scanRenpyAssets, resolveGamePath } from '../src/renpy/scanAssets'
@@ -23,6 +24,11 @@ describe('资源引用解析（纯）', () => {
     expect(audioRefName('stop')).toBeNull()
     expect(audioRefName('bgm')).toBe('bgm')
     expect(audioRefName('')).toBeNull()
+  })
+  it('rpyAudioFilename 补 .mp3（与 rpy 引用一致）', () => {
+    expect(rpyAudioFilename('bgm')).toBe('bgm.mp3')
+    expect(rpyAudioFilename('start.mp3')).toBe('start.mp3')
+    expect(rpyAudioFilename('se.MP3')).toBe('se.MP3')
   })
   it('resolveImage / resolveAudio 大小写不敏感', () => {
     const maps: AssetMaps = { images: { 'kyon 0012': 'images/kyon 0012.png' }, audio: { start: 'audio/start.mp3' } }

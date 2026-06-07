@@ -6,7 +6,7 @@ import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ttsHealth, planJobs, synthOne, enrichedJobs, applyVoices } from './tts'
 import { loadCharacters, saveCharacters } from './characters'
-import { importWorkbook, pendingDirFor, workspaceSub } from './workspace'
+import { importWorkbook, pendingDirFor, workspaceSub, type WsType } from './workspace'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
 import { validateFormat } from './format'
 import {
@@ -19,6 +19,7 @@ import {
   resolveGamePath,
   IMAGE_EXTS,
   AUDIO_EXTS,
+  rpyAudioFilename,
   diffWorkbooks,
   resolveAssetTarget,
   runPipeline,
@@ -37,6 +38,7 @@ import type {
   SaveResult,
   CheckResult,
   ProjectResult,
+  AssetImportResult,
   DiffResult,
   TtsHealth,
   TtsJobsArgs,
@@ -246,26 +248,36 @@ function registerIpc(): void {
     }
   })
 
-  // 从表格导入资源到关联工程（立绘/背景→images，音乐/音效→audio）
+  // 从表格新增资源：始终写入 workspace（按类型分文件夹、文件名精准对应 rpy），
+  // 关联工程时同时复制到工程 game/images|audio。无需关联工程也可新增（只进 workspace）。
   ipcMain.handle(
     'asset:import',
-    async (_e, category: 'image' | 'audio', name: string): Promise<ProjectResult> => {
+    async (_e, kind: WsType, name: string, xlsxPath: string): Promise<AssetImportResult> => {
       try {
-        if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
-        const filters =
-          category === 'image'
-            ? [{ name: '图片', extensions: IMAGE_EXTS }]
-            : [{ name: '音频', extensions: AUDIO_EXTS }]
+        const isAudio = kind === 'music' || kind === 'sound'
+        const filters = isAudio
+          ? [{ name: '音频', extensions: AUDIO_EXTS }]
+          : [{ name: '图片', extensions: IMAGE_EXTS }]
         const r = await dialog.showOpenDialog({ properties: ['openFile'], filters })
         const src = r.canceled ? null : r.filePaths[0]
         if (!src) return { ok: false, error: '' } // 取消
-        const sub = category === 'image' ? 'images' : 'audio'
-        const dest = join(linkedGamePath, sub, `${name}${extname(src)}`)
-        await mkdir(join(linkedGamePath, sub), { recursive: true })
-        await copyFile(src, dest)
-        const index = await scanRenpyAssets(linkedGamePath)
-        linkedTransforms = index.transforms
-        return { ok: true, ...index }
+        // 文件名精准对应 rpy：图片=名+源扩展（rpy 按名解析，扩展任意）；音频=rpyAudioFilename（名.mp3）
+        const fileName = isAudio ? rpyAudioFilename(name) : `${name}${extname(src)}`
+        // 1) workspace 副本（必有）：workspace/<表>/<类型>/<文件名>
+        const ws = dirname(xlsxPath)
+        const wsDir = workspaceSub(ws, kind)
+        await mkdir(wsDir, { recursive: true })
+        await copyFile(src, join(wsDir, fileName))
+        // 2) 关联工程时同时复制到 game/images|audio 并回扫资源索引
+        if (linkedGamePath) {
+          const sub = isAudio ? 'audio' : 'images'
+          await mkdir(join(linkedGamePath, sub), { recursive: true })
+          await copyFile(src, join(linkedGamePath, sub, fileName))
+          const index = await scanRenpyAssets(linkedGamePath)
+          linkedTransforms = index.transforms
+          return { ok: true, index }
+        }
+        return { ok: true }
       } catch (e) {
         return { ok: false, error: errMsg(e) }
       }

@@ -100,6 +100,11 @@ export type WorkspaceImportResult =
   | { ok: true; dir: string; copyPath: string }
   | { ok: false; error: string }
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
+// 新增资源到 workspace（+关联工程）。关联工程时回带最新资源索引；未关联则无 index。
+export type WsAssetType = 'background' | 'sprite' | 'music' | 'sound'
+export type AssetImportResult =
+  | { ok: true; index?: AssetIndex }
+  | { ok: false; error: string }
 export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
 export type SaveResult = { ok: true } | { ok: false; error: string }
@@ -158,7 +163,7 @@ export interface E2rApi {
   check(xlsxPath: string): Promise<CheckResult>
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
-  importAsset(category: 'image' | 'audio', name: string): Promise<ProjectResult>
+  importAsset(kind: WsAssetType, name: string, xlsxPath: string): Promise<AssetImportResult>
   ttsCharacters(): Promise<TtsConfig>
   ttsSaveCharacters(config: TtsConfig): Promise<SaveResult>
   ttsHealth(baseUrl: string): Promise<TtsHealth>

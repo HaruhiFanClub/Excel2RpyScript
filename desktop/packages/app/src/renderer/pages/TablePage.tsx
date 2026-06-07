@@ -125,16 +125,17 @@ export default function TablePage() {
       ttsConfig,
       onImage: (url, title) => setImg({ url, title }),
       onAudio: (url, title) => setAudio({ url, title }),
-      onImport: (category, name) => {
-        void window.e2r.importAsset(category, name).then((r) => {
-          if (r.ok) {
-            setAssets({ gamePath: r.gamePath, images: r.images, audio: r.audio, transforms: r.transforms })
+      onImport: (kind, name) => {
+        if (!workbookPath) return
+        void window.e2r.importAsset(kind, name, workbookPath).then((r) => {
+          if (r.ok && r.index) {
+            setAssets(r.index) // 关联工程：用回扫的索引刷新缩略图
             gridApi.current?.refreshCells({ force: true })
           }
         })
       },
     }),
-    [assets, ttsConfig, setAssets],
+    [assets, ttsConfig, setAssets, workbookPath],
   )
 
 
