@@ -1,5 +1,5 @@
 // TTS 客户端（主进程）：对接配置的 GPT-SoVITS HTTP 端点，复刻 handler/tts.py 的合成流程。
-import { writeFile, mkdir, readFile, readdir } from 'node:fs/promises'
+import { writeFile, mkdir, readFile, readdir, copyFile, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   readWorkbook,
@@ -13,37 +13,78 @@ import {
   type EnrichedJob,
 } from '@e2r/core'
 
-const MANIFEST = '.e2r-tts.json' // 记录每个 wav 的合成输入签名，用于「未重新生成」检测
+const MANIFEST = '.e2r-tts.json' // pending 目录：记录每个已生成 wav 的合成输入签名
+const APPLIED = '.e2r-applied.json' // voice 目录：记录每个已应用 wav 的签名（落实时刻的输入）
 
-async function readManifest(audioDir: string): Promise<Record<string, string>> {
+async function readManifest(dir: string, file = MANIFEST): Promise<Record<string, string>> {
   try {
-    return JSON.parse(await readFile(join(audioDir, MANIFEST), 'utf-8')) as Record<string, string>
+    return JSON.parse(await readFile(join(dir, file), 'utf-8')) as Record<string, string>
   } catch {
     return {}
   }
 }
 
-// 列出任务并标注状态：未生成 / 已生成 / 已生成但输入已改（stale）
+// 列出任务并标注状态。两段式：
+//  pending 目录里有且签名匹配 → generated（临时，可试听）
+//  voice  目录里有且签名匹配 → applied（已落实到 workspace）
+//  仅存在但签名不匹配 → stale（输入已改）；都没有 → missing
 export async function enrichedJobs(
   xlsxPath: string,
   useVoiceText: boolean,
   cfg: TtsConfig,
   textLang: string,
-  audioDir: string,
+  pendingDir: string,
+  voiceDir: string,
 ): Promise<EnrichedJob[]> {
   const jobs = await planJobs(xlsxPath, useVoiceText)
-  const existing = new Set(await listSynthesized(audioDir))
-  const manifest = await readManifest(audioDir)
+  const [pendWavs, voiceWavs, genMan, appMan] = await Promise.all([
+    listSynthesized(pendingDir),
+    listSynthesized(voiceDir),
+    readManifest(pendingDir, MANIFEST),
+    readManifest(voiceDir, APPLIED),
+  ])
+  const inPending = new Set(pendWavs)
+  const inVoice = new Set(voiceWavs)
   return jobs.map((j) => {
     const tone = toneFor(cfg, j.voiceCmd)
     const sig = ttsJobSignature(j, cfg, textLang)
-    const status: EnrichedJob['status'] = !existing.has(j.outputName)
-      ? 'missing'
-      : manifest[j.outputName] === sig
-        ? 'generated'
-        : 'stale'
+    const name = j.outputName
+    let status: EnrichedJob['status']
+    if (inVoice.has(name) && appMan[name] === sig) status = 'applied'
+    else if (inPending.has(name) && genMan[name] === sig) status = 'generated'
+    else if (inVoice.has(name) || inPending.has(name)) status = 'stale'
+    else status = 'missing'
     return { ...j, tone, status }
   })
+}
+
+// 应用（打对号）：把 pending 里已生成的语音复制到 workspace/<表>/voice（必有副本），
+// 若关联工程则同时复制到 game/audio。返回成功应用的数量。
+export async function applyVoices(
+  outputNames: string[],
+  pendingDir: string,
+  voiceDir: string,
+  gameAudioDir: string | null,
+): Promise<{ applied: number }> {
+  const genMan = await readManifest(pendingDir, MANIFEST)
+  const appMan = await readManifest(voiceDir, APPLIED)
+  await mkdir(voiceDir, { recursive: true })
+  if (gameAudioDir) await mkdir(gameAudioDir, { recursive: true })
+  let applied = 0
+  for (const name of outputNames) {
+    const src = join(pendingDir, name)
+    try {
+      await access(src)
+    } catch {
+      continue // 还没生成，无法应用
+    }
+    await copyFile(src, join(voiceDir, name))
+    if (gameAudioDir) await copyFile(src, join(gameAudioDir, name))
+    appMan[name] = genMan[name] ?? ''
+    applied++
+  }
+  await writeFile(join(voiceDir, APPLIED), JSON.stringify(appMan, null, 2))
+  return { applied }
 }
 
 export async function ttsHealth(

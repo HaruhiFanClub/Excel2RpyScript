@@ -40,6 +40,11 @@ export interface TtsJobsArgs {
 export type TtsJobsResult =
   | { ok: true; jobs: EnrichedJob[]; audioDir: string }
   | { ok: false; error: string }
+export interface TtsApplyArgs {
+  xlsxPath: string
+  outputNames: string[] // 要应用（打对号）的语音 outputName 列表
+}
+export type TtsApplyResult = { ok: true; applied: number } | { ok: false; error: string }
 export interface TtsSynthArgs {
   xlsxPath: string
   useVoiceText: boolean
@@ -158,6 +163,7 @@ export interface E2rApi {
   ttsSaveCharacters(config: TtsConfig): Promise<SaveResult>
   ttsHealth(baseUrl: string): Promise<TtsHealth>
   ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
+  ttsApply(args: TtsApplyArgs): Promise<TtsApplyResult>
   ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>
   onTtsProgress(cb: (p: TtsProgress) => void): () => void
   ttsEngineStart(): Promise<EngineStartResult>

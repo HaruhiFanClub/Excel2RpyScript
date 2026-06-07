@@ -4,6 +4,8 @@ import {
   Play,
   RefreshCw,
   Wand2,
+  Check,
+  CheckCheck,
   CircleCheck,
   CircleDashed,
   CircleAlert,
@@ -120,10 +122,23 @@ export default function TtsPage() {
     [workbookPath, useVoiceText, textLang, promptLang, refresh, managedUrl],
   )
 
+  const apply = useCallback(
+    async (outputNames: string[]) => {
+      if (!workbookPath || outputNames.length === 0) return
+      const r = await window.e2r.ttsApply({ xlsxPath: workbookPath, outputNames })
+      if (!r.ok && r.error) setError(r.error)
+      await refresh()
+    },
+    [workbookPath, refresh],
+  )
+
   const audition = (job: EnrichedJob) => {
-    // 试听不依赖关联工程：音频由 asset:// 从当前 TTS 音频目录解析（含未关联时表旁 audio）
+    // 试听不依赖关联工程：音频由 asset:// 从 pending(已生成)/voice(已应用) 解析
     setAudio({ url: assetUrl(`audio/${job.outputName}`), title: job.outputName })
   }
+
+  // 可应用（有 pending 文件可落实）= 已生成 / 未重新生成
+  const appliable = jobs.filter((j) => j.status === 'generated' || j.status === 'stale')
 
   const counts = jobs.reduce(
     (a, j) => ({ ...a, [j.status]: (a[j.status] ?? 0) + 1 }),
@@ -139,14 +154,25 @@ export default function TtsPage() {
             按已启用角色合成语音并试听，在「角色配置」页管理角色与语气
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => synth()}
-          disabled={!workbookPath || busy || jobs.length === 0}
-          className="flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-4 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
-        >
-          {busy ? <span className="spinner" /> : <Wand2 size={14} />} 合成全部
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => apply(appliable.map((j) => j.outputName))}
+            disabled={busy || appliable.length === 0}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3.5 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 disabled:opacity-50 dark:text-emerald-300"
+            title="把已生成的语音全部应用到 workspace（关联工程则同时覆盖到工程）"
+          >
+            <CheckCheck size={14} /> 应用全部{appliable.length ? ` (${appliable.length})` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => synth()}
+            disabled={!workbookPath || busy || jobs.length === 0}
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-4 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
+          >
+            {busy ? <span className="spinner" /> : <Wand2 size={14} />} 合成全部
+          </button>
+        </div>
       </header>
 
       {/* 配置条 */}
@@ -200,7 +226,8 @@ export default function TtsPage() {
       {jobs.length > 0 && (
         <div className="mb-2 flex items-center gap-3 text-[12px] text-app-muted">
           <span>共 {jobs.length} 句</span>
-          <span className="text-emerald-500">已生成 {counts['generated'] ?? 0}</span>
+          <span className="text-emerald-500">已应用 {counts['applied'] ?? 0}</span>
+          <span className="text-sky-500">已生成 {counts['generated'] ?? 0}</span>
           <span className="text-amber-500">未重新生成 {counts['stale'] ?? 0}</span>
           <span>未生成 {counts['missing'] ?? 0}</span>
           {error && <span className="text-rose-500">· {error}</span>}
@@ -250,6 +277,16 @@ export default function TtsPage() {
                             title="试听"
                           >
                             <Play size={11} />
+                          </button>
+                        )}
+                        {(j.status === 'generated' || j.status === 'stale') && (
+                          <button
+                            onClick={() => apply([j.outputName])}
+                            disabled={busy}
+                            className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/30 disabled:opacity-40 dark:text-emerald-300"
+                            title="应用（打对号）：落实到 workspace（关联工程则同时覆盖）"
+                          >
+                            <Check size={12} />
                           </button>
                         )}
                         <button
@@ -302,8 +339,10 @@ function Select({ value, onChange }: { value: string; onChange: (v: string) => v
 function StatusBadge({ status, run }: { status: EnrichedJob['status']; run?: RunState }) {
   if (run === 'running') return <span className="flex items-center gap-1 text-sky-500"><span className="spinner" /> 合成中</span>
   if (run === 'error') return <span className="flex items-center gap-1 text-rose-500"><CircleAlert size={13} /> 失败</span>
+  if (status === 'applied')
+    return <span className="flex items-center gap-1 text-emerald-500"><CheckCheck size={13} /> 已应用</span>
   if (status === 'generated' || run === 'done')
-    return <span className="flex items-center gap-1 text-emerald-500"><CircleCheck size={13} /> 已生成</span>
+    return <span className="flex items-center gap-1 text-sky-500"><CircleCheck size={13} /> 已生成</span>
   if (status === 'stale')
     return <span className="flex items-center gap-1 text-amber-500"><CircleAlert size={13} /> 未重新生成</span>
   return <span className="flex items-center gap-1 text-app-muted"><CircleDashed size={13} /> 未生成</span>

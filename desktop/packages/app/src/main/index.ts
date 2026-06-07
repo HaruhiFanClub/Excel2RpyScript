@@ -1,11 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } from 'electron'
 import { join, dirname } from 'node:path'
+import { existsSync } from 'node:fs'
 import { writeFile, mkdir, copyFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { ttsHealth, planJobs, synthOne, enrichedJobs } from './tts'
+import { ttsHealth, planJobs, synthOne, enrichedJobs, applyVoices } from './tts'
 import { loadCharacters, saveCharacters } from './characters'
-import { importWorkbook } from './workspace'
+import { importWorkbook, pendingDirFor, workspaceSub } from './workspace'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
 import { validateFormat } from './format'
 import {
@@ -40,6 +41,8 @@ import type {
   TtsHealth,
   TtsJobsArgs,
   TtsJobsResult,
+  TtsApplyArgs,
+  TtsApplyResult,
   TtsSynthArgs,
   TtsSynthSummary,
   DeployArgs,
@@ -62,7 +65,8 @@ protocol.registerSchemesAsPrivileged([
 
 let linkedGamePath: string | null = null
 let linkedTransforms: string[] = []
-let currentAudioDir: string | null = null // 当前 TTS 音频目录（关联=game/audio，未关联=表旁 audio）
+let currentPendingDir: string | null = null // 当前表的临时语音目录（已生成、可试听）
+let currentVoiceDir: string | null = null // 当前表的已应用语音目录（workspace/<表>/voice）
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -297,11 +301,17 @@ function registerIpc(): void {
   })
 
   // ---- TTS ----
-  const audioDirFor = (xlsxPath: string): string => {
-    const dir = linkedGamePath ? join(linkedGamePath, 'audio') : join(dirname(xlsxPath), 'audio')
-    currentAudioDir = dir // 记录给 asset:// 试听（含未关联工程）
-    return dir
+  // 当前表的语音目录：pending（临时/已生成，放系统临时区）+ voice（已应用，workspace/<表>/voice）。
+  // workspaceDir = 工作簿副本所在目录（dirname）。
+  const ttsDirsFor = (xlsxPath: string): { pending: string; voice: string } => {
+    const ws = dirname(xlsxPath)
+    const pending = pendingDirFor(ws)
+    const voice = workspaceSub(ws, 'voice')
+    currentPendingDir = pending
+    currentVoiceDir = voice
+    return { pending, voice }
   }
+  const gameAudioDir = (): string | null => (linkedGamePath ? join(linkedGamePath, 'audio') : null)
 
   ipcMain.handle('tts:health', (_e, baseUrl: string): Promise<TtsHealth> => ttsHealth(baseUrl))
   ipcMain.handle('tts:engineStart', (e): Promise<EngineStartResult> =>
@@ -312,9 +322,19 @@ function registerIpc(): void {
   ipcMain.handle('tts:jobs', async (_e, args: TtsJobsArgs): Promise<TtsJobsResult> => {
     try {
       const cfg = await loadCharacters()
-      const audioDir = audioDirFor(args.xlsxPath)
-      const jobs = await enrichedJobs(args.xlsxPath, args.useVoiceText, cfg, args.textLang, audioDir)
-      return { ok: true, jobs, audioDir }
+      const { pending, voice } = ttsDirsFor(args.xlsxPath)
+      const jobs = await enrichedJobs(args.xlsxPath, args.useVoiceText, cfg, args.textLang, pending, voice)
+      return { ok: true, jobs, audioDir: pending }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
+  // 应用（打对号）：把已生成语音落实到 workspace/<表>/voice（+ 关联工程 game/audio）
+  ipcMain.handle('tts:apply', async (_e, args: TtsApplyArgs): Promise<TtsApplyResult> => {
+    try {
+      const { pending, voice } = ttsDirsFor(args.xlsxPath)
+      const { applied } = await applyVoices(args.outputNames, pending, voice, gameAudioDir())
+      return { ok: true, applied }
     } catch (e) {
       return { ok: false, error: errMsg(e) }
     }
@@ -329,7 +349,8 @@ function registerIpc(): void {
       }
       // 按角色排序：连续同角色跳过切权重（远端大幅提速；内嵌不切权重，排序无副作用）。
       jobs = [...jobs].sort((a, b) => a.roleName.localeCompare(b.roleName))
-      const audioDir = audioDirFor(args.xlsxPath)
+      // 合成只写入 pending（临时、可试听）；落实到 workspace/工程需用户「打对号」应用
+      const audioDir = ttsDirsFor(args.xlsxPath).pending
       let done = 0
       let failed = 0
       let lastRole: string | null = null
@@ -381,7 +402,26 @@ void app.whenReady().then(() => {
     try {
       const url = new URL(request.url)
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
-      const abs = resolveAssetTarget(rel, linkedGamePath, currentAudioDir)
+      let abs: string | null = null
+      if (rel.startsWith('audio/')) {
+        // 语音/音频试听：依次在 pending(已生成) → voice(已应用) → 关联工程 game/audio 中查找
+        const name = rel.slice('audio/'.length)
+        const candidates = [
+          currentPendingDir,
+          currentVoiceDir,
+          linkedGamePath ? join(linkedGamePath, 'audio') : null,
+        ]
+        for (const d of candidates) {
+          if (!d) continue
+          const p = resolveAssetTarget(`audio/${name}`, null, d)
+          if (p && existsSync(p)) {
+            abs = p
+            break
+          }
+        }
+      } else {
+        abs = resolveAssetTarget(rel, linkedGamePath, null)
+      }
       if (!abs) return new Response('not found', { status: 404 })
       return net.fetch(pathToFileURL(abs).toString())
     } catch {

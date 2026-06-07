@@ -22,6 +22,8 @@ import type {
   TtsHealth,
   TtsJobsArgs,
   TtsJobsResult,
+  TtsApplyArgs,
+  TtsApplyResult,
   TtsProgress,
   TtsSynthArgs,
   TtsSynthSummary,
@@ -62,6 +64,7 @@ const api: E2rApi = {
     ipcRenderer.invoke('tts:saveCharacters', config),
   ttsHealth: (baseUrl: string): Promise<TtsHealth> => ipcRenderer.invoke('tts:health', baseUrl),
   ttsJobs: (args: TtsJobsArgs): Promise<TtsJobsResult> => ipcRenderer.invoke('tts:jobs', args),
+  ttsApply: (args: TtsApplyArgs): Promise<TtsApplyResult> => ipcRenderer.invoke('tts:apply', args),
   ttsSynthesize: (args: TtsSynthArgs): Promise<TtsSynthSummary> =>
     ipcRenderer.invoke('tts:synthesize', args),
   onTtsProgress: (cb: (p: TtsProgress) => void): (() => void) => {

@@ -22,10 +22,12 @@ export interface PlanTtsOptions {
   useVoiceText: boolean // true → 用「选填语音文本」(col18)，否则用台词(col1)
 }
 
-// 带 UI 状态的任务：tone=语气，status=未生成/已生成/已生成但输入已改
+// 带 UI 状态的任务：tone=语气
+// status：missing 未生成 / generated 已生成(临时,可试听,未落实) / applied 已应用(已复制进 workspace)
+//         / stale 已生成或已应用但输入已改（需重新生成/重新应用）
 export interface EnrichedJob extends TtsJob {
   tone: string
-  status: 'missing' | 'generated' | 'stale'
+  status: 'missing' | 'generated' | 'applied' | 'stale'
 }
 
 // 仅对 语音列(col23)=tts（不分大小写）的行规划合成任务，角色名前向填充。
