@@ -1,15 +1,32 @@
-import { useState } from 'react'
-import { GitCompare, ArrowRight, Plus, Minus, PencilLine } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { GitCompare, ArrowRight, Plus, Minus, PencilLine, FileSpreadsheet } from 'lucide-react'
 import type { DiffReport } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { PathPicker } from './PathPicker'
 
 export function DiffPanel() {
-  const newPath = useWorkspaceStore((s) => s.workbookPath)
   const [oldPath, setOldPath] = useState('')
+  const workspacePath = useWorkspaceStore((s) => s.workbookPath)
+  const [newPath, setNewPath] = useState('')
   const [report, setReport] = useState<DiffReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!newPath && workspacePath) setNewPath(workspacePath)
+  }, [newPath, workspacePath])
+
+  const updateOldPath = (path: string) => {
+    setOldPath(path)
+    setReport(null)
+    setError(null)
+  }
+
+  const updateNewPath = (path: string) => {
+    setNewPath(path)
+    setReport(null)
+    setError(null)
+  }
 
   const run = async () => {
     if (!oldPath || !newPath) return
@@ -29,20 +46,32 @@ export function DiffPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-app-muted">旧表</span>
-        <div className="w-[360px]">
-          <PathPicker value={oldPath} onChange={setOldPath} mode="file" placeholder="选择旧版 .xlsx…" />
+      <div className="mb-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-end gap-3">
+        <div className="min-w-0">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-app-muted">旧表</div>
+          <PathPicker value={oldPath} onChange={updateOldPath} mode="file" placeholder="选择或拖入旧版 .xlsx…" />
         </div>
-        <ArrowRight size={14} className="text-app-muted" />
-        <span className="truncate font-mono text-[12px] text-app-muted">
-          新：{newPath ? newPath.split('/').pop() : '（用工作区当前表）'}
-        </span>
+        <ArrowRight size={14} className="mb-2 text-app-muted" />
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-app-muted">新表</span>
+            {workspacePath && workspacePath !== newPath && (
+              <button
+                type="button"
+                onClick={() => updateNewPath(workspacePath)}
+                className="text-[11px] text-sky-600 hover:text-sky-700 dark:text-sky-300"
+              >
+                使用当前表
+              </button>
+            )}
+          </div>
+          <PathPicker value={newPath} onChange={updateNewPath} mode="file" placeholder="选择或拖入新版 .xlsx…" />
+        </div>
         <button
           type="button"
           onClick={run}
           disabled={!oldPath || !newPath || loading}
-          className="ml-auto flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
+          className="mb-0.5 flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
         >
           {loading ? <span className="spinner" /> : <GitCompare size={14} />} 对比
         </button>
@@ -78,45 +107,37 @@ export function DiffPanel() {
               .filter((s) => s.added.length || s.removed.length || s.changed.length)
               .map((s) => (
                 <div key={s.name} className="px-4 py-3">
-                  <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-app-text">
-                    {s.name}
+                  <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-app-text">
+                    <FileSpreadsheet size={14} className="text-app-muted" />
+                    <span>{s.name}</span>
+                    <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] font-medium text-app-muted dark:bg-white/10">
+                      +{s.added.length} -{s.removed.length} ~{s.changed.length}
+                    </span>
                     {s.status !== 'common' && (
                       <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] uppercase text-app-muted dark:bg-white/10">
                         {s.status === 'added' ? '新 sheet' : '已删除 sheet'}
                       </span>
                     )}
                   </div>
-                  <ul className="space-y-1">
-                    {s.changed.map((c, i) => (
-                      <li key={`c${i}`} className="text-[12px]">
-                        <span className="mr-2 font-mono text-amber-500">~{c.excelRowNew}</span>
-                        <span className="text-app-muted">{c.role}</span>{' '}
-                        <span className="text-app-text">{c.text || '（无台词）'}</span>
-                        <div className="ml-7 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                          {c.fields.map((f, k) => (
-                            <span key={k} className="font-mono text-[11px]">
-                              <span className="text-app-muted">{f.header}：</span>
-                              <span className="text-rose-500 line-through">{f.old || '∅'}</span>
-                              <ArrowRight size={9} className="mx-0.5 inline text-app-muted" />
-                              <span className="text-emerald-600 dark:text-emerald-400">{f.new || '∅'}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </li>
-                    ))}
-                    {s.added.map((a, i) => (
-                      <li key={`a${i}`} className="text-[12px] text-emerald-600 dark:text-emerald-400">
-                        <span className="mr-2 font-mono">+{a.excelRow}</span>
-                        <span className="opacity-70">{a.role}</span> {a.text}
-                      </li>
-                    ))}
-                    {s.removed.map((r, i) => (
-                      <li key={`r${i}`} className="text-[12px] text-rose-500">
-                        <span className="mr-2 font-mono">−{r.excelRow}</span>
-                        <span className="opacity-70">{r.role}</span>{' '}
-                        <span className="line-through">{r.text}</span>
-                      </li>
-                    ))}
+                  <ul className="space-y-2">
+                    {s.ops.map((op, i) => {
+                      if (op.type === 'changed') return <ChangedOp key={i} change={op.change} />
+                      if (op.type === 'added') {
+                        return (
+                          <li key={i} className="rounded-lg bg-emerald-400/8 px-3 py-2 text-[12px] text-emerald-700 dark:text-emerald-300">
+                            <span className="mr-2 font-mono">+{op.row.excelRow}</span>
+                            <span className="opacity-70">{op.row.role}</span> {op.row.text || '（无台词）'}
+                          </li>
+                        )
+                      }
+                      return (
+                        <li key={i} className="rounded-lg bg-rose-500/8 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+                          <span className="mr-2 font-mono">-{op.row.excelRow}</span>
+                          <span className="opacity-70">{op.row.role}</span>{' '}
+                          <span className="line-through">{op.row.text || '（无台词）'}</span>
+                        </li>
+                      )
+                    })}
                   </ul>
                 </div>
               ))}
@@ -124,5 +145,36 @@ export function DiffPanel() {
         )}
       </section>
     </div>
+  )
+}
+
+function ChangedOp({ change }: { change: DiffReport['sheets'][number]['changed'][number] }) {
+  return (
+    <li className="rounded-lg border border-amber-400/25 bg-amber-400/8 px-3 py-2 text-[12px]">
+      <div className="mb-1.5 flex min-w-0 items-center gap-2">
+        <span className="font-mono text-amber-600 dark:text-amber-300">
+          {`~${change.excelRowOld}->${change.excelRowNew}`}
+        </span>
+        <span className="truncate text-app-muted">{change.newRole || change.oldRole || '（无角色）'}</span>
+        <span className="min-w-0 truncate text-app-text">{change.newText || change.oldText || '（无台词）'}</span>
+      </div>
+      <div className="space-y-1">
+        {change.fields.map((f, k) => (
+          <div key={k} className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 font-mono text-[11px]">
+            <span className="text-right text-app-muted">{f.header}</span>
+            <div className="min-w-0 space-y-0.5">
+              <div className="min-w-0 rounded bg-rose-500/10 px-1.5 py-0.5 text-rose-600 dark:text-rose-300">
+                <span className="mr-1">-</span>
+                <span className="break-words">{f.old || '∅'}</span>
+              </div>
+              <div className="min-w-0 rounded bg-emerald-400/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300">
+                <span className="mr-1">+</span>
+                <span className="break-words">{f.new || '∅'}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </li>
   )
 }

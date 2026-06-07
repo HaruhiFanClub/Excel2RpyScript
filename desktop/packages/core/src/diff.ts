@@ -1,6 +1,6 @@
-// 新旧表格对比（纯逻辑）。按「角色+台词」作为行身份做 LCS 对齐：
-// 对齐的行比较其它列 → changed（带字段级差异）；未对齐 → added / removed。
-// 台词本身改动会表现为 removed+added（台词即身份），其它列改动表现为 changed。
+// 新旧表格对比（纯逻辑）。先用完全相同的行做 LCS 上下文锚点，再在锚点之间的
+// 局部差异块内按相似度配对。这样局部台词/角色/资源修改会收敛为 changed，
+// 插入/删除也能被限制在相邻块内，避免把后续大量行带偏。
 import { TABLE_COLUMNS, type TableData, type TableRow } from './tableColumns'
 
 export interface FieldChange {
@@ -12,8 +12,12 @@ export interface FieldChange {
 export interface RowChange {
   excelRowOld: number
   excelRowNew: number
-  role: string
-  text: string
+  role: string // 兼容旧 UI：优先使用新角色
+  text: string // 兼容旧 UI：优先使用新台词
+  oldRole: string
+  newRole: string
+  oldText: string
+  newText: string
   fields: FieldChange[]
 }
 export interface RowMark {
@@ -21,12 +25,17 @@ export interface RowMark {
   role: string
   text: string
 }
+export type DiffOp =
+  | { type: 'changed'; change: RowChange }
+  | { type: 'added'; row: RowMark }
+  | { type: 'removed'; row: RowMark }
 export interface SheetDiff {
   name: string
   status: 'common' | 'added' | 'removed'
   added: RowMark[]
   removed: RowMark[]
   changed: RowChange[]
+  ops: DiffOp[]
   unchanged: number
 }
 export interface DiffReport {
@@ -34,31 +43,113 @@ export interface DiffReport {
   summary: { added: number; removed: number; changed: number }
 }
 
-const ident = (r: TableRow) => `${r.cells['role_name'] ?? ''}${r.cells['text'] ?? ''}`
+const cell = (r: TableRow, key: string): string => r.cells[key] ?? ''
+const fullIdent = (r: TableRow): string => TABLE_COLUMNS.map((c) => cell(r, c.key)).join('\u0001')
 const mark = (r: TableRow): RowMark => ({
   excelRow: r.excelRow,
   role: r.cells['role_name'] ?? '',
   text: r.cells['text'] ?? '',
 })
 
-// LCS 对齐，返回配对序列 [oldIndex|null, newIndex|null]
-function align(a: TableRow[], b: TableRow[]): Array<[number | null, number | null]> {
+// LCS 只返回完全相同的上下文锚点。
+function exactAnchors(a: TableRow[], b: TableRow[]): Array<[number, number]> {
   const m = a.length
   const n = b.length
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
       dp[i]![j] =
-        ident(a[i]!) === ident(b[j]!)
+        fullIdent(a[i]!) === fullIdent(b[j]!)
           ? dp[i + 1]![j + 1]! + 1
           : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!)
     }
   }
-  const out: Array<[number | null, number | null]> = []
+  const out: Array<[number, number]> = []
   let i = 0
   let j = 0
   while (i < m && j < n) {
-    if (ident(a[i]!) === ident(b[j]!)) {
+    if (fullIdent(a[i]!) === fullIdent(b[j]!)) {
+      out.push([i, j])
+      i++
+      j++
+    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) {
+      i++
+    } else {
+      j++
+    }
+  }
+  return out
+}
+
+function ngrams(s: string): Set<string> {
+  if (s.length <= 1) return new Set(s ? [s] : [])
+  const out = new Set<string>()
+  for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2))
+  return out
+}
+
+function textSimilarity(a: string, b: string): number {
+  if (a === b) return a ? 1 : 0
+  if (!a || !b) return 0
+  const aa = ngrams(a)
+  const bb = ngrams(b)
+  if (aa.size === 0 || bb.size === 0) return 0
+  let hit = 0
+  for (const x of aa) if (bb.has(x)) hit++
+  return (2 * hit) / (aa.size + bb.size)
+}
+
+function rowScore(a: TableRow, b: TableRow): number {
+  let score = 0
+  if (cell(a, 'role_name') && cell(a, 'role_name') === cell(b, 'role_name')) score += 5
+  const textScore = textSimilarity(cell(a, 'text'), cell(b, 'text'))
+  if (textScore >= 0.35) score += textScore * 6
+
+  for (const c of TABLE_COLUMNS) {
+    if (c.key === 'role_name' || c.key === 'text') continue
+    const av = cell(a, c.key)
+    const bv = cell(b, c.key)
+    if (!av || av !== bv) continue
+    score += c.key === 'voice_cmd' || c.key === 'voice' ? 2 : 1.35
+  }
+  return score
+}
+
+const PAIR_THRESHOLD = 4.5
+const GAP_PENALTY = -4
+
+function alignGap(a: TableRow[], b: TableRow[]): Array<[number | null, number | null]> {
+  const m = a.length
+  const n = b.length
+  if (m === 0) return b.map((_, j): [number | null, number | null] => [null, j])
+  if (n === 0) return a.map((_, i): [number | null, number | null] => [i, null])
+
+  // 同长度局部块通常来自行内编辑，按顺序配对最不容易扩大 diff 范围。
+  if (m === n) return a.map((_, i): [number | null, number | null] => [i, i])
+
+  const pairScores = Array.from({ length: m }, (_, i) =>
+    Array.from({ length: n }, (_, j) => rowScore(a[i]!, b[j]!)),
+  )
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
+  for (let i = m - 1; i >= 0; i--) dp[i]![n] = dp[i + 1]![n]! + GAP_PENALTY
+  for (let j = n - 1; j >= 0; j--) dp[m]![j] = dp[m]![j + 1]! + GAP_PENALTY
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      const pair = pairScores[i]![j]! >= PAIR_THRESHOLD
+        ? dp[i + 1]![j + 1]! + pairScores[i]![j]!
+        : Number.NEGATIVE_INFINITY
+      dp[i]![j] = Math.max(pair, dp[i + 1]![j]! + GAP_PENALTY, dp[i]![j + 1]! + GAP_PENALTY)
+    }
+  }
+
+  const out: Array<[number | null, number | null]> = []
+  let i = 0
+  let j = 0
+  const eq = (x: number, y: number): boolean => Math.abs(x - y) < 1e-6
+  while (i < m && j < n) {
+    const score = pairScores[i]![j]!
+    const pair = score >= PAIR_THRESHOLD ? dp[i + 1]![j + 1]! + score : Number.NEGATIVE_INFINITY
+    if (score >= PAIR_THRESHOLD && eq(dp[i]![j]!, pair)) {
       out.push([i, j])
       i++
       j++
@@ -75,32 +166,73 @@ function align(a: TableRow[], b: TableRow[]): Array<[number | null, number | nul
   return out
 }
 
+function makeChange(oldRow: TableRow, newRow: TableRow): RowChange | null {
+  const fields: FieldChange[] = []
+  for (const c of TABLE_COLUMNS) {
+    const ov = cell(oldRow, c.key)
+    const nv = cell(newRow, c.key)
+    if (ov !== nv) fields.push({ col: c.key, header: c.header, old: ov, new: nv })
+  }
+  if (fields.length === 0) return null
+  const oldRole = cell(oldRow, 'role_name')
+  const newRole = cell(newRow, 'role_name')
+  const oldText = cell(oldRow, 'text')
+  const newText = cell(newRow, 'text')
+  return {
+    excelRowOld: oldRow.excelRow,
+    excelRowNew: newRow.excelRow,
+    role: newRole || oldRole,
+    text: newText || oldText,
+    oldRole,
+    newRole,
+    oldText,
+    newText,
+    fields,
+  }
+}
+
 function diffSheet(name: string, oldRows: TableRow[], newRows: TableRow[]): SheetDiff {
   const added: RowMark[] = []
   const removed: RowMark[] = []
   const changed: RowChange[] = []
+  const ops: DiffOp[] = []
   let unchanged = 0
-  for (const [oi, nj] of align(oldRows, newRows)) {
-    if (oi !== null && nj !== null) {
-      const o = oldRows[oi]!
-      const nrow = newRows[nj]!
-      const fields: FieldChange[] = []
-      for (const c of TABLE_COLUMNS) {
-        if (c.key === 'role_name' || c.key === 'text') continue // 身份键，相等
-        const ov = o.cells[c.key] ?? ''
-        const nv = nrow.cells[c.key] ?? ''
-        if (ov !== nv) fields.push({ col: c.key, header: c.header, old: ov, new: nv })
+
+  const pushGap = (oldStart: number, oldEnd: number, newStart: number, newEnd: number): void => {
+    const oldPart = oldRows.slice(oldStart, oldEnd)
+    const newPart = newRows.slice(newStart, newEnd)
+    for (const [oi, nj] of alignGap(oldPart, newPart)) {
+      if (oi !== null && nj !== null) {
+        const change = makeChange(oldPart[oi]!, newPart[nj]!)
+        if (change) {
+          changed.push(change)
+          ops.push({ type: 'changed', change })
+        } else {
+          unchanged++
+        }
+      } else if (oi !== null) {
+        const row = mark(oldPart[oi]!)
+        removed.push(row)
+        ops.push({ type: 'removed', row })
+      } else if (nj !== null) {
+        const row = mark(newPart[nj]!)
+        added.push(row)
+        ops.push({ type: 'added', row })
       }
-      if (fields.length) {
-        changed.push({ excelRowOld: o.excelRow, excelRowNew: nrow.excelRow, role: nrow.cells['role_name'] ?? '', text: nrow.cells['text'] ?? '', fields })
-      } else unchanged++
-    } else if (oi !== null) {
-      removed.push(mark(oldRows[oi]!))
-    } else if (nj !== null) {
-      added.push(mark(newRows[nj]!))
     }
   }
-  return { name, status: 'common', added, removed, changed, unchanged }
+
+  let oldCursor = 0
+  let newCursor = 0
+  for (const [oi, nj] of exactAnchors(oldRows, newRows)) {
+    pushGap(oldCursor, oi, newCursor, nj)
+    unchanged++
+    oldCursor = oi + 1
+    newCursor = nj + 1
+  }
+  pushGap(oldCursor, oldRows.length, newCursor, newRows.length)
+
+  return { name, status: 'common', added, removed, changed, ops, unchanged }
 }
 
 export function diffWorkbooks(oldWb: TableData, newWb: TableData): DiffReport {
@@ -116,9 +248,25 @@ export function diffWorkbooks(oldWb: TableData, newWb: TableData): DiffReport {
     const n = newByName.get(name)
     if (o && n) sheets.push(diffSheet(name, o.rows, n.rows))
     else if (n)
-      sheets.push({ name, status: 'added', added: n.rows.map(mark), removed: [], changed: [], unchanged: 0 })
+      sheets.push({
+        name,
+        status: 'added',
+        added: n.rows.map(mark),
+        removed: [],
+        changed: [],
+        ops: n.rows.map((row) => ({ type: 'added', row: mark(row) })),
+        unchanged: 0,
+      })
     else if (o)
-      sheets.push({ name, status: 'removed', added: [], removed: o.rows.map(mark), changed: [], unchanged: 0 })
+      sheets.push({
+        name,
+        status: 'removed',
+        added: [],
+        removed: o.rows.map(mark),
+        changed: [],
+        ops: o.rows.map((row) => ({ type: 'removed', row: mark(row) })),
+        unchanged: 0,
+      })
   }
 
   const summary = sheets.reduce(

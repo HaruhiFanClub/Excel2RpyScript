@@ -109,7 +109,7 @@ export default function CheckPage() {
             {mode === 'check' ? '检查' : '版本对比'}
           </h2>
           <p className="mt-1 text-[13px] text-app-muted">
-            {mode === 'check' ? '按填写规范扫描剧本，发现错误 / 警告 / 提示' : '导入旧表，与当前表生成差异报告'}
+            {mode === 'check' ? '按填写规范扫描剧本，发现错误 / 警告 / 提示' : '独立选择两份表格，生成差异报告'}
           </p>
         </div>
         <div className="flex items-center gap-2">
