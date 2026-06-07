@@ -27,11 +27,9 @@ win:
   icon: build/icon.ico
   target:
     - nsis
-    - portable
+    - zip
   artifactName: ${productName}-${version}-${arch}.${ext}
 nsis:
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
-portable:
-  artifactName: ${productName}-${version}-${arch}-portable.${ext}
