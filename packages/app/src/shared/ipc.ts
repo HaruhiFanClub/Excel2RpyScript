@@ -29,6 +29,18 @@ export interface TtsHealth {
   version?: string
   error?: string
 }
+export interface UpdateCheckResult {
+  ok: boolean
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseUrl: string | null
+  releaseNotes: string | null
+  downloadUrl: string | null
+  publishedAt: string | null
+  source: string | null
+  error: string | null
+}
 export interface TtsJobsArgs {
   xlsxPath: string
   textLang: string
@@ -125,6 +137,7 @@ export interface E2rApi {
   pickAudio(): Promise<string | null>
   workspaceImport(originalPath: string): Promise<WorkspaceImportResult>
   openExternal(url: string): void
+  checkUpdates(): Promise<UpdateCheckResult>
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
   exportRpyFile(file: RpyFile): Promise<RpyFileWriteResult>

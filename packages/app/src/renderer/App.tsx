@@ -7,8 +7,10 @@ import CheckPage from './pages/CheckPage'
 import TtsPage from './pages/TtsPage'
 import CharactersPage from './pages/CharactersPage'
 import { WorkspaceBar } from './components/WorkspaceBar'
+import { UpdateDialog } from './components/UpdateDialog'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 import { useCharactersStore } from './stores/useCharactersStore'
+import type { UpdateCheckResult } from '../shared/ipc'
 
 const PAGES: PageId[] = ['convert', 'table', 'tts', 'characters', 'check']
 
@@ -16,6 +18,9 @@ export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
   const [page, setPage] = useState<PageId>(initial && PAGES.includes(initial) ? initial : 'convert')
   const [tableVisited, setTableVisited] = useState(page === 'table')
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [checkingUpdates, setCheckingUpdates] = useState(false)
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null)
 
   // 开发钩子 + 恢复上次会话（持久化的关联工程在启动时重新扫描）
   const importWorkbook = useWorkspaceStore((s) => s.importWorkbook)
@@ -36,6 +41,30 @@ export function App(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const checkUpdates = async () => {
+    if (checkingUpdates) return
+    setUpdateOpen(true)
+    setCheckingUpdates(true)
+    try {
+      setUpdateResult(await window.e2r.checkUpdates())
+    } catch (err) {
+      setUpdateResult({
+        ok: false,
+        currentVersion: '',
+        latestVersion: null,
+        updateAvailable: false,
+        releaseUrl: null,
+        releaseNotes: null,
+        downloadUrl: null,
+        publishedAt: null,
+        source: null,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setCheckingUpdates(false)
+    }
+  }
+
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-app-bg text-app-text">
       {/* 静态背景光晕 */}
@@ -51,7 +80,7 @@ export function App(): JSX.Element {
         <div className="drag pointer-events-auto absolute inset-x-0 top-0 z-10 h-8" />
 
         <div className="flex h-full">
-          <Sidebar active={page} onNavigate={setPage} />
+          <Sidebar active={page} onNavigate={setPage} onCheckUpdates={checkUpdates} />
 
           <div className="flex min-w-0 flex-1 flex-col pt-8">
             <WorkspaceBar />
@@ -92,6 +121,13 @@ export function App(): JSX.Element {
           </div>
         </div>
       </div>
+      <UpdateDialog
+        open={updateOpen}
+        checking={checkingUpdates}
+        result={updateResult}
+        onClose={() => setUpdateOpen(false)}
+        onCheck={checkUpdates}
+      />
     </main>
   )
 }

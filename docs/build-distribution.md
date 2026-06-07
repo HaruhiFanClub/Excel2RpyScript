@@ -26,6 +26,40 @@ release environment 可配置这些 secrets：
 
 不配置 R2 时，发版仍会上传 GitHub Release 和 GitHub 版 `latest.json`。
 
+## 检查更新
+
+应用内“检查更新”读取与参考项目一致的轻量 `latest.json`：
+
+```json
+{
+  "version": "0.1.1",
+  "notes": "本版更新日志",
+  "pub_date": "2026-06-07T00:00:00.000Z",
+  "release_url": "https://github.com/HaruhiFanClub/Excel2RpyScript/releases/tag/v0.1.1",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "",
+      "url": "https://.../Excel2Rpy-0.1.1-arm64.dmg",
+      "kind": "dmg"
+    },
+    "windows-x86_64": {
+      "signature": "",
+      "url": "https://.../Excel2Rpy-0.1.1-x64.zip",
+      "kind": "portable-zip",
+      "portable_url": "https://.../Excel2Rpy-0.1.1-x64.zip",
+      "installer_url": "https://.../Excel2Rpy-0.1.1-x64-setup.exe"
+    }
+  }
+}
+```
+
+默认更新源顺序：
+
+1. `https://excel2rpy.harucdn.com/latest.json`
+2. `https://github.com/HaruhiFanClub/Excel2RpyScript/releases/latest/download/latest.json`
+
+开发或排障时可以用逗号分隔的 `E2R_UPDATE_ENDPOINTS` 覆盖默认更新源。当前实现只做检查和打开下载/发布页，不执行静默下载或覆盖安装。
+
 ## 一条命令
 
 在**目标操作系统**上（PyInstaller 不能跨平台冻结 torch，mac/win 各跑一次）：

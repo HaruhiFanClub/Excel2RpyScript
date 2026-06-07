@@ -8,6 +8,7 @@ import { loadCharacters, saveCharacters } from './characters'
 import { importWorkbook, pendingDirFor, workspaceSub, type WsType } from './workspace'
 import { engineStart, engineStop, engineStatus } from './ttsServer'
 import { validateFormat } from './format'
+import { checkForUpdates } from './update'
 import {
   readTable,
   saveTableEdits,
@@ -184,6 +185,8 @@ function registerIpc(): void {
   ipcMain.handle('shell:openExternal', (_e, url: string): void => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url)
   })
+
+  ipcMain.handle('update:check', (): ReturnType<typeof checkForUpdates> => checkForUpdates())
 
   // 全局角色配置（单一来源；内置远端角色由主进程叠加并锁定）
   ipcMain.handle('tts:characters', (): Promise<TtsConfig> => loadCharacters())

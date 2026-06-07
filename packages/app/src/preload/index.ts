@@ -21,6 +21,7 @@ import type {
   TableResult,
   TtsConfig,
   TtsHealth,
+  UpdateCheckResult,
   TtsJobsArgs,
   TtsJobsResult,
   TtsApplyArgs,
@@ -42,6 +43,7 @@ const api: E2rApi = {
   openExternal: (url: string): void => {
     void ipcRenderer.invoke('shell:openExternal', url)
   },
+  checkUpdates: (): Promise<UpdateCheckResult> => ipcRenderer.invoke('update:check'),
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
   exportRpyFile: (file: RpyFile): Promise<RpyFileWriteResult> => ipcRenderer.invoke('rpy:export', file),

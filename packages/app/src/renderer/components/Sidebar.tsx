@@ -7,10 +7,12 @@ import {
   Moon,
   Sun,
   Info,
+  RefreshCw,
   type LucideIcon,
 } from 'lucide-react'
 import { useThemeStore } from '../stores/useThemeStore'
 import appIcon from '../assets/app-icon.png'
+import appPackage from '../../../package.json'
 
 export type PageId = 'convert' | 'table' | 'tts' | 'characters' | 'check'
 
@@ -62,8 +64,12 @@ function Item(props: {
   )
 }
 
-export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => void }) {
-  const { active, onNavigate } = props
+export function Sidebar(props: {
+  active: PageId
+  onNavigate: (id: PageId) => void
+  onCheckUpdates: () => void
+}) {
+  const { active, onNavigate, onCheckUpdates } = props
   const theme = useThemeStore((s) => s.theme)
   const toggleTheme = useThemeStore((s) => s.toggleTheme)
 
@@ -110,13 +116,18 @@ export function Sidebar(props: { active: PageId; onNavigate: (id: PageId) => voi
           label={theme === 'dark' ? '切换浅色' : '切换深色'}
         />
         <Item
+          onClick={onCheckUpdates}
+          icon={<RefreshCw size={15} strokeWidth={1.8} />}
+          label="检查更新"
+        />
+        <Item
           onClick={() => window.e2r.openExternal('https://github.com/HaruhiFanClub/Excel2RpyScript')}
           icon={<Info size={15} strokeWidth={1.8} />}
           label="关于"
         />
       </div>
 
-      <div className="px-4 pb-3 pt-1 text-[10px] text-app-muted">v0.1.0 · M0</div>
+      <div className="px-4 pb-3 pt-1 text-[10px] text-app-muted">v{appPackage.version} · M0</div>
     </aside>
   )
 }
