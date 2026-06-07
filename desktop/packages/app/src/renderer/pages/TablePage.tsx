@@ -32,10 +32,10 @@ const RENDERERS: Record<string, ColDef<Row>['cellRenderer']> = {
   sound: AudioCell,
 }
 // 立绘列拆成 左/中/右 三个虚拟列（底层仍写回单一 character 列）
-const SPRITE_SUB: { field: string; header: string }[] = [
-  { field: 'sprite_left', header: '立绘·左' },
-  { field: 'sprite_mid', header: '立绘·中' },
-  { field: 'sprite_right', header: '立绘·右' },
+const SPRITE_SUB: { field: string; header: string; width: number }[] = [
+  { field: 'sprite_left', header: '立绘·左', width: 112 },
+  { field: 'sprite_mid', header: '立绘·中', width: 112 },
+  { field: 'sprite_right', header: '立绘·右', width: 112 },
 ]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
 
@@ -162,7 +162,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
           defs.push({
             headerName: s.header,
             field: s.field,
-            width: 128,
+            width: s.width,
             editable: true,
             cellRenderer: SpriteSlotCell,
           })
