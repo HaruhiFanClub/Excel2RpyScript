@@ -181,7 +181,7 @@ export function SpriteSlotCell(p: CustomCellRendererProps) {
   )
 }
 
-// 该列在某行可选的下拉项：角色列=已启用角色主名称；语音指令列=该行角色对应的语气。
+// 该列在某行可选的下拉项：角色列=已启用角色主名称；语音指令列=该行有效角色对应的语气。
 function comboOptions(ctx: GridContext, field: string, row: Record<string, unknown>): string[] {
   const cfg = ctx.ttsConfig
   if (!cfg) return []
@@ -190,12 +190,12 @@ function comboOptions(ctx: GridContext, field: string, row: Record<string, unkno
       .filter(([, m]) => isRoleEnabled(m))
       .map(([name]) => name)
   }
-  if (field === 'voice_cmd') return tonesForRole(cfg, String(row['role_name'] ?? ''))
+  if (field === 'voice_cmd') return tonesForRole(cfg, String(row['__effectiveRole'] ?? row['role_name'] ?? ''))
   return []
 }
 
 // 角色 / 语音指令列：单元格内显示值（语音指令附语气 chip）+ 选中/悬浮时出现下拉按钮，
-// 点按钮弹出美观可搜索的下拉框（portal，避免被表格裁剪）。双击仍可自由输入。
+// 点按钮弹出美观可搜索的下拉框（portal，避免被表格裁剪）。
 export function ComboCell(p: CustomCellRendererProps) {
   const ctx = ctxOf(p)
   const field = p.colDef?.field ?? ''

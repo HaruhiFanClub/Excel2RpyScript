@@ -25,6 +25,7 @@ import { SheetTabs, appGridTheme, defaultGridColDef } from '../components/dataGr
 
 type Row = Record<string, string | number>
 type RowDataCacheEntry = { sourceRows: TableRow[]; spriteKey: string; rows: Row[] }
+const EFFECTIVE_ROLE_FIELD = '__effectiveRole'
 const LARGE_TEXT = new Set(['text', 'voice_text', 'remark'])
 const RENDERERS: Record<string, ColDef<Row>['cellRenderer']> = {
   background: BgCell,
@@ -38,6 +39,15 @@ const SPRITE_SUB: { field: string; header: string; width: number }[] = [
   { field: 'sprite_right', header: '立绘·右', width: 112 },
 ]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
+
+function recomputeEffectiveRoles(rows: Row[]): void {
+  let current = ''
+  for (const row of [...rows].sort((a, b) => Number(a['__row']) - Number(b['__row']))) {
+    const role = String(row['role_name'] ?? '')
+    if (role.trim()) current = role
+    row[EFFECTIVE_ROLE_FIELD] = current
+  }
+}
 
 export default function TablePage({ active: pageActive = true }: { active?: boolean }) {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
@@ -209,11 +219,15 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     if (cached && cached.sourceRows === sheet.rows && cached.spriteKey === spriteKey) {
       return cached.rows
     }
+    let currentRole = ''
     const rows = sheet.rows.map((r) => {
       const s = parseSprites(r.cells['character'] ?? '', spritePositions)
+      const role = r.cells['role_name'] ?? ''
+      if (role.trim()) currentRole = role
       return {
         __sheet: sheet.name,
         __row: r.excelRow,
+        [EFFECTIVE_ROLE_FIELD]: currentRole,
         ...r.cells,
         sprite_left: s.left,
         sprite_mid: s.mid,
@@ -258,6 +272,14 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
           col: col as CellEdit['col'],
           value: e.newValue == null ? '' : String(e.newValue),
         })
+      }
+      if (col === 'role_name') {
+        const rows: Row[] = []
+        gridApi.current?.forEachNode((node) => {
+          if (node.data) rows.push(node.data)
+        })
+        recomputeEffectiveRoles(rows)
+        gridApi.current?.refreshCells({ columns: ['voice_cmd'], force: true })
       }
       setStatus(null)
       setDirty(edits.current.size)
