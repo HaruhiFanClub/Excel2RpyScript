@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CustomCellRendererProps } from 'ag-grid-react'
-import { Play, Music, Upload, ChevronDown, Check, Search } from 'lucide-react'
+import { Play, Music, Upload, ChevronDown, Check, Search, Plus } from 'lucide-react'
 import {
   spriteImageName,
   resolveImage,
@@ -135,8 +135,9 @@ export function ComboCell(p: CustomCellRendererProps) {
     field === 'voice_cmd' && ctx.ttsConfig ? (o: string) => toneFor(ctx.ttsConfig!, o) : undefined
   const tone = toneOf && value ? toneOf(value) : ''
 
+  // 通过 node.setDataValue 写回（列设为不可编辑，避免双击进入卡死的编辑态；此 API 仍可改值并触发跟踪）
   const choose = (v: string) => {
-    p.setValue?.(v)
+    p.node?.setDataValue?.(field, v)
     setOpen(false)
   }
 
@@ -148,11 +149,6 @@ export function ComboCell(p: CustomCellRendererProps) {
         ref={btnRef}
         type="button"
         onMouseDown={(e) => e.stopPropagation()}
-        onDoubleClick={(e) => {
-          // 防止双击下拉按钮被表格当成「双击进入编辑」，导致输入态卡死退不出
-          e.stopPropagation()
-          e.preventDefault()
-        }}
         onClick={(e) => {
           e.stopPropagation()
           setOpen((o) => !o)
@@ -228,13 +224,16 @@ function ComboPopup({
     }
   }, [anchorRef, onClose])
 
-  const q = query.trim().toLowerCase()
+  const raw = query.trim()
+  const q = raw.toLowerCase()
   // 搜索同时匹配指令名与语气（如输入「严厉」也能命中 kyon_1 认真 有些严厉）
   const label = (o: string) => {
     const t = toneOf?.(o)
     return t && t !== o ? `${o} ${t}` : o
   }
   const filtered = q ? options.filter((o) => label(o).toLowerCase().includes(q)) : options
+  // 允许自由输入：输入的内容不在选项里时，给一个「使用 “xxx”」的自定义项
+  const custom = raw && !options.includes(raw) ? raw : ''
 
   return createPortal(
     <div
@@ -253,7 +252,19 @@ function ComboPopup({
           />
         </div>
         <div className="custom-scrollbar max-h-[268px] overflow-y-auto py-1">
-          {filtered.length === 0 ? (
+          {custom && (
+            <button
+              type="button"
+              onClick={() => onPick(custom)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-app-text transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <Plus size={13} className="shrink-0 text-sky-500" />
+              <span className="truncate">
+                使用 <span className="font-medium">“{custom}”</span>
+              </span>
+            </button>
+          )}
+          {filtered.length === 0 && !custom ? (
             <div className="px-3 py-3 text-center text-[12px] text-app-muted">
               {options.length === 0 ? '该角色暂无可选项' : '无匹配项'}
             </div>
