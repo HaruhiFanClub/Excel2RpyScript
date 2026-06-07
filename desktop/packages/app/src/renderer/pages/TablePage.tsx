@@ -163,7 +163,6 @@ export default function TablePage() {
             field: s.field,
             width: 128,
             editable: true,
-            tooltipField: s.field,
             cellRenderer: SpriteSlotCell,
           })
         }
@@ -174,7 +173,6 @@ export default function TablePage() {
           field: c.key,
           width: c.width,
           editable: true,
-          tooltipField: c.key,
           pinned: 'left' as const,
           cellEditor: DatalistEditor,
           cellEditorParams: { values: roleSuggestions },
@@ -186,7 +184,6 @@ export default function TablePage() {
           field: c.key,
           width: c.width,
           editable: true,
-          tooltipField: c.key,
           cellRenderer: VoiceCmdCell,
           cellEditor: DatalistEditor,
           cellEditorParams: (p: { data?: Row }) => ({
@@ -199,7 +196,6 @@ export default function TablePage() {
           field: c.key,
           width: c.width,
           editable: true,
-          tooltipField: c.key,
           ...(RENDERERS[c.key] ? { cellRenderer: RENDERERS[c.key] } : {}),
           ...(LARGE_TEXT.has(c.key) ? { cellEditor: 'agLargeTextCellEditor', cellEditorPopup: true } : {}),
         })
@@ -380,7 +376,6 @@ export default function TablePage() {
               quickFilterText={query}
               onGridReady={onGridReady}
               onCellValueChanged={onCellValueChanged}
-              tooltipShowDelay={300}
               stopEditingWhenCellsLoseFocus
               animateRows={false}
             />
