@@ -149,4 +149,20 @@ describe('diffWorkbooks', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  it('大表局部修改不会走整表二次方矩阵', () => {
+    const oldRows: TableRow[] = []
+    const newRows: TableRow[] = []
+    for (let i = 0; i < 2500; i++) {
+      oldRows.push(row(8 + i, { role_name: '角色', text: `第 ${i} 行台词`, voice_cmd: `cmd_${i % 3}` }))
+      newRows.push(row(8 + i, { role_name: '角色', text: `第 ${i} 行台词`, voice_cmd: `cmd_${i % 3}` }))
+    }
+    newRows[1200] = row(1208, { role_name: '角色', text: '第 1200 行台词被局部修改', voice_cmd: 'cmd_1' })
+    newRows.splice(1600, 0, row(1608, { role_name: '新角色', text: '插入的一句新台词' }))
+
+    const report = diffWorkbooks({ sheets: [{ name: 'start', rows: oldRows }] }, { sheets: [{ name: 'start', rows: newRows }] })
+
+    expect(report.summary).toEqual({ added: 1, removed: 0, changed: 1 })
+    expect(report.sheets[0]!.ops.map((op) => op.type)).toEqual(['changed', 'added'])
+  })
 })

@@ -1,6 +1,6 @@
-// 新旧表格对比（纯逻辑）。先用完全相同的行做 LCS 上下文锚点，再在锚点之间的
-// 局部差异块内按相似度配对。这样局部台词/角色/资源修改会收敛为 changed，
-// 插入/删除也能被限制在相邻块内，避免把后续大量行带偏。
+// 新旧表格对比（纯逻辑）。先用唯一且完全相同的行做 patience-style 上下文锚点，
+// 再在锚点之间的局部差异块内按相似度配对。这样局部台词/角色/资源修改会收敛为
+// changed，插入/删除也能被限制在相邻块内，避免把后续大量行带偏。
 import { TABLE_COLUMNS, type TableData, type TableRow } from './tableColumns'
 
 export interface FieldChange {
@@ -51,34 +51,56 @@ const mark = (r: TableRow): RowMark => ({
   text: r.cells['text'] ?? '',
 })
 
-// LCS 只返回完全相同的上下文锚点。
-function exactAnchors(a: TableRow[], b: TableRow[]): Array<[number, number]> {
-  const m = a.length
-  const n = b.length
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0))
-  for (let i = m - 1; i >= 0; i--) {
-    for (let j = n - 1; j >= 0; j--) {
-      dp[i]![j] =
-        fullIdent(a[i]!) === fullIdent(b[j]!)
-          ? dp[i + 1]![j + 1]! + 1
-          : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!)
-    }
-  }
-  const out: Array<[number, number]> = []
-  let i = 0
-  let j = 0
-  while (i < m && j < n) {
-    if (fullIdent(a[i]!) === fullIdent(b[j]!)) {
-      out.push([i, j])
-      i++
-      j++
-    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) {
-      i++
-    } else {
-      j++
-    }
-  }
+function uniqueIndex(rows: TableRow[]): Map<string, number | null> {
+  const out = new Map<string, number | null>()
+  rows.forEach((row, index) => {
+    const key = fullIdent(row)
+    out.set(key, out.has(key) ? null : index)
+  })
   return out
+}
+
+function longestIncreasingPairs(pairs: Array<[number, number]>): Array<[number, number]> {
+  if (pairs.length <= 1) return pairs
+  const tails: number[] = []
+  const prev = new Array<number>(pairs.length).fill(-1)
+  const tailAt = new Array<number>(pairs.length).fill(0)
+
+  for (let i = 0; i < pairs.length; i++) {
+    const value = pairs[i]![1]
+    let lo = 0
+    let hi = tails.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (pairs[tails[mid]!]![1] < value) lo = mid + 1
+      else hi = mid
+    }
+    if (lo > 0) prev[i] = tails[lo - 1]!
+    tails[lo] = i
+    tailAt[lo] = i
+  }
+
+  const out: Array<[number, number]> = []
+  let k = tailAt[tails.length - 1]!
+  while (k >= 0) {
+    out.push(pairs[k]!)
+    k = prev[k]!
+  }
+  return out.reverse()
+}
+
+// 返回唯一且完全相同的上下文锚点。避免 O(n*m) LCS 矩阵在大表上打爆进程。
+function exactAnchors(a: TableRow[], b: TableRow[]): Array<[number, number]> {
+  const oldUnique = uniqueIndex(a)
+  const newUnique = uniqueIndex(b)
+  const pairs: Array<[number, number]> = []
+  for (const [key, oldIndex] of oldUnique) {
+    if (oldIndex === null) continue
+    const newIndex = newUnique.get(key)
+    if (newIndex !== undefined && newIndex !== null) pairs.push([oldIndex, newIndex])
+  }
+  pairs.sort((x, y) => x[0] - y[0])
+  return longestIncreasingPairs(pairs)
 }
 
 function ngrams(s: string): Set<string> {
@@ -117,6 +139,8 @@ function rowScore(a: TableRow, b: TableRow): number {
 
 const PAIR_THRESHOLD = 4.5
 const GAP_PENALTY = -4
+const MAX_DP_CELLS = 90000
+const GREEDY_LOOKAHEAD = 48
 
 function alignGap(a: TableRow[], b: TableRow[]): Array<[number | null, number | null]> {
   const m = a.length
@@ -126,6 +150,7 @@ function alignGap(a: TableRow[], b: TableRow[]): Array<[number | null, number | 
 
   // 同长度局部块通常来自行内编辑，按顺序配对最不容易扩大 diff 范围。
   if (m === n) return a.map((_, i): [number | null, number | null] => [i, i])
+  if (m * n > MAX_DP_CELLS) return alignGapGreedy(a, b)
 
   const pairScores = Array.from({ length: m }, (_, i) =>
     Array.from({ length: n }, (_, j) => rowScore(a[i]!, b[j]!)),
@@ -163,6 +188,63 @@ function alignGap(a: TableRow[], b: TableRow[]): Array<[number | null, number | 
   }
   while (i < m) out.push([i++, null])
   while (j < n) out.push([null, j++])
+  return out
+}
+
+function alignGapGreedy(a: TableRow[], b: TableRow[]): Array<[number | null, number | null]> {
+  const out: Array<[number | null, number | null]> = []
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    const score = rowScore(a[i]!, b[j]!)
+    if (fullIdent(a[i]!) === fullIdent(b[j]!) || score >= PAIR_THRESHOLD) {
+      out.push([i++, j++])
+      continue
+    }
+
+    let oldMatch = -1
+    let oldMatchScore = Number.NEGATIVE_INFINITY
+    let newMatch = -1
+    let newMatchScore = Number.NEGATIVE_INFINITY
+    const oldLimit = Math.min(a.length, i + GREEDY_LOOKAHEAD + 1)
+    const newLimit = Math.min(b.length, j + GREEDY_LOOKAHEAD + 1)
+
+    for (let oi = i + 1; oi < oldLimit; oi++) {
+      const s = rowScore(a[oi]!, b[j]!)
+      if (fullIdent(a[oi]!) === fullIdent(b[j]!) || s >= PAIR_THRESHOLD) {
+        oldMatch = oi
+        oldMatchScore = s
+        break
+      }
+    }
+    for (let nj = j + 1; nj < newLimit; nj++) {
+      const s = rowScore(a[i]!, b[nj]!)
+      if (fullIdent(a[i]!) === fullIdent(b[nj]!) || s >= PAIR_THRESHOLD) {
+        newMatch = nj
+        newMatchScore = s
+        break
+      }
+    }
+
+    if (oldMatch >= 0 || newMatch >= 0) {
+      const oldSkip = oldMatch >= 0 ? oldMatch - i : Number.POSITIVE_INFINITY
+      const newSkip = newMatch >= 0 ? newMatch - j : Number.POSITIVE_INFINITY
+      const preferNew =
+        newSkip < oldSkip ||
+        (newSkip === oldSkip && newMatchScore >= oldMatchScore)
+      if (preferNew) {
+        while (j < newMatch) out.push([null, j++])
+      } else {
+        while (i < oldMatch) out.push([i++, null])
+      }
+      continue
+    }
+
+    if (a.length - i > b.length - j) out.push([i++, null])
+    else out.push([null, j++])
+  }
+  while (i < a.length) out.push([i++, null])
+  while (j < b.length) out.push([null, j++])
   return out
 }
 

@@ -120,7 +120,7 @@ export function DiffPanel() {
                     )}
                   </div>
                   <ul className="space-y-2">
-                    {s.ops.map((op, i) => {
+                    {sheetOps(s).map((op, i) => {
                       if (op.type === 'changed') return <ChangedOp key={i} change={op.change} />
                       if (op.type === 'added') {
                         return (
@@ -146,6 +146,14 @@ export function DiffPanel() {
       </section>
     </div>
   )
+}
+
+function sheetOps(sheet: DiffReport['sheets'][number]) {
+  return sheet.ops ?? [
+    ...sheet.changed.map((change) => ({ type: 'changed' as const, change })),
+    ...sheet.removed.map((row) => ({ type: 'removed' as const, row })),
+    ...sheet.added.map((row) => ({ type: 'added' as const, row })),
+  ]
 }
 
 function ChangedOp({ change }: { change: DiffReport['sheets'][number]['changed'][number] }) {
