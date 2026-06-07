@@ -77,16 +77,6 @@ export type DeployResult =
   | { ok: true; gamePath: string; written: string[] }
   | { ok: false; error: string }
 
-// .e2rproj 工程文件
-export interface ProjectManifest {
-  version: 1
-  workbook: string
-  renpyProject?: string
-}
-export type ProjectReadResult =
-  | { ok: true; manifest: ProjectManifest }
-  | { ok: false; error: string }
-
 // workspace：导入表格后返回的副本位置
 export type WorkspaceImportResult =
   | { ok: true; dir: string; copyPath: string }
@@ -144,10 +134,6 @@ export interface E2rApi {
   pickAudio(): Promise<string | null>
   workspaceImport(originalPath: string): Promise<WorkspaceImportResult>
   openExternal(url: string): void
-  openProjectDialog(): Promise<string | null>
-  saveProjectDialog(defaultName?: string): Promise<string | null>
-  readProject(path: string): Promise<ProjectReadResult>
-  writeProject(path: string, manifest: ProjectManifest): Promise<SaveResult>
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
   exportRpyFile(file: RpyFile): Promise<RpyFileWriteResult>

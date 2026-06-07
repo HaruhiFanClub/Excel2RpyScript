@@ -21,7 +21,6 @@ interface WorkspaceState {
   sheetChanges: SheetChangeState // 已保存到表格、但尚未应用到关联工程的 sheet
   assets: AssetIndex | null // 关联的 Ren'Py 工程资源索引（不持久化，启动时按 renpyDir 重扫）
   renpyDir: string // 关联工程时用户选择的目录（持久化，用于重开时重新关联）
-  currentProjectPath: string | null // 当前 .e2rproj 工程文件
   setWorkbookPath: (p: string) => void
   importWorkbook: (originalPath: string) => Promise<void> // 导入原表 → 建副本 → 切到副本
   setOutputDir: (p: string) => void
@@ -33,8 +32,6 @@ interface WorkspaceState {
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
   setAssets: (a: AssetIndex) => void
   clearProject: () => void
-  openProjectFile: () => Promise<void>
-  saveProjectFile: (saveAs?: boolean) => Promise<boolean>
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -50,7 +47,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       sheetChanges: { workbookPath: '', sheets: {} },
       assets: null,
       renpyDir: '',
-      currentProjectPath: null,
       setWorkbookPath: (workbookPath) => {
         set({
           workbookPath,
@@ -183,43 +179,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
       setAssets: (assets) => set({ assets }),
       clearProject: () => set({ assets: null, renpyDir: '' }),
-      openProjectFile: async () => {
-        const path = await window.e2r.openProjectDialog()
-        if (!path) return
-        const r = await window.e2r.readProject(path)
-        if (!r.ok) return
-        const m = r.manifest
-        set({
-          workbookPath: m.workbook,
-          workspaceDir: m.workbook.replace(/[\\/][^\\/]*$/, ''), // 副本所在目录
-          convertResult: null,
-          convertWorkbookPath: '',
-          convertError: null,
-          sheetChanges: { workbookPath: m.workbook, sheets: {} },
-          currentProjectPath: path,
-          assets: null,
-          renpyDir: '',
-        })
-        void get().runConvert(m.workbook)
-        if (m.renpyProject) await get().linkProject(m.renpyProject)
-      },
-      saveProjectFile: async (saveAs) => {
-        const s = get()
-        let path = s.currentProjectPath
-        if (saveAs || !path) {
-          const p = await window.e2r.saveProjectDialog('project.e2rproj')
-          if (!p) return false
-          path = p
-        }
-        const manifest = {
-          version: 1 as const,
-          workbook: s.workbookPath,
-          ...(s.renpyDir ? { renpyProject: s.renpyDir } : {}),
-        }
-        const r = await window.e2r.writeProject(path, manifest)
-        if (r.ok) set({ currentProjectPath: path })
-        return r.ok
-      },
     }),
     {
       name: 'e2r-workspace',
@@ -228,7 +187,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         workspaceDir: s.workspaceDir,
         outputDir: s.outputDir,
         renpyDir: s.renpyDir,
-        currentProjectPath: s.currentProjectPath,
       }),
     },
   ),

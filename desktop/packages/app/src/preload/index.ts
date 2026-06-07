@@ -15,8 +15,6 @@ import type {
   PreviewResult,
   RpyFile,
   RpyFileWriteResult,
-  ProjectManifest,
-  ProjectReadResult,
   ProjectResult,
   AssetImportResult,
   WsAssetType,
@@ -46,11 +44,6 @@ const api: E2rApi = {
   openExternal: (url: string): void => {
     void ipcRenderer.invoke('shell:openExternal', url)
   },
-  openProjectDialog: () => ipcRenderer.invoke('dialog:openProject'),
-  saveProjectDialog: (defaultName?: string) => ipcRenderer.invoke('dialog:saveProject', defaultName),
-  readProject: (path: string): Promise<ProjectReadResult> => ipcRenderer.invoke('project:read', path),
-  writeProject: (path: string, manifest: ProjectManifest): Promise<SaveResult> =>
-    ipcRenderer.invoke('project:write', path, manifest),
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
   exportRpyFile: (file: RpyFile): Promise<RpyFileWriteResult> => ipcRenderer.invoke('rpy:export', file),
