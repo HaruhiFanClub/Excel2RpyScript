@@ -148,6 +148,41 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* ---------- AG Grid 编辑器：避免透明编辑框透出后方单元格 ---------- */
+.ag-cell-inline-editing,
+.ag-popup-editor {
+  background: rgb(255 255 255 / 0.96) !important;
+  border: 1px solid rgb(14 165 233 / 0.38) !important;
+  box-shadow:
+    0 0 0 3px rgb(14 165 233 / 0.12),
+    0 14px 34px -20px rgb(15 23 42 / 0.45);
+}
+
+.dark .ag-cell-inline-editing,
+.dark .ag-popup-editor {
+  background: rgb(15 23 42 / 0.98) !important;
+  border-color: rgb(56 189 248 / 0.38) !important;
+  box-shadow:
+    0 0 0 3px rgb(56 189 248 / 0.14),
+    0 18px 42px -24px rgb(0 0 0 / 0.85);
+}
+
+.ag-cell-inline-editing .ag-input-field-input,
+.ag-cell-inline-editing .ag-text-field-input,
+.ag-popup-editor .ag-input-field-input,
+.ag-popup-editor .ag-text-field-input,
+.ag-popup-editor textarea {
+  background: transparent !important;
+  color: var(--app-text) !important;
+}
+
+.ag-popup-editor textarea,
+.ag-large-text-input {
+  min-height: 140px;
+  padding: 10px 12px !important;
+  line-height: 1.55;
+}
+
 /* ---------- 表格下拉（角色 / 语音指令）：选中或悬浮单元格才显示下拉按钮 ---------- */
 .e2r-combo-caret {
   opacity: 0;
