@@ -163,10 +163,6 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   }, [pageActive])
 
   useEffect(() => {
-    gridApi.current?.redrawRows()
-  }, [selectedRow])
-
-  useEffect(() => {
     if (tableError) setLocalError(null)
   }, [tableError])
 
@@ -678,13 +674,6 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
               onCellClicked={onCellClicked}
               onCellValueChanged={onCellValueChanged}
               onBodyScroll={() => setImagePreview(null)}
-              getRowClass={(p) => {
-                const selected = selectedRow
-                if (!selected) return undefined
-                return selected.sheet === p.data?.['__sheet'] && selected.excelRow === Number(p.data?.['__row'])
-                  ? 'e2r-selected-row'
-                  : undefined
-              }}
               stopEditingWhenCellsLoseFocus
               animateRows={false}
             />
