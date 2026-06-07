@@ -34,34 +34,11 @@ function importedCellValue(kind: WsAssetType, currentValue: string, imported: st
   return imported
 }
 
-function PreviewText(props: { label: string; title: string; onPreview: () => void }) {
-  const timer = useRef<number | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (timer.current != null) window.clearTimeout(timer.current)
-    }
-  }, [])
-
-  const cancel = () => {
-    if (timer.current == null) return
-    window.clearTimeout(timer.current)
-    timer.current = null
-  }
-
+function PreviewText(props: { label: string; title: string }) {
   return (
     <span
       title={props.title}
-      onClick={(e) => {
-        if (e.detail > 1) return
-        cancel()
-        timer.current = window.setTimeout(() => {
-          timer.current = null
-          props.onPreview()
-        }, 220)
-      }}
-      onDoubleClick={cancel}
-      className="cursor-pointer truncate rounded px-1 text-left text-[12px] text-sky-700 hover:bg-sky-400/10 dark:text-sky-200"
+      className="truncate rounded px-1 text-left text-[12px] text-sky-700 dark:text-sky-200"
     >
       {props.label}
     </span>
@@ -120,15 +97,7 @@ export function SpriteCell(p: CustomCellRendererProps) {
         const name = spriteImageName(seg)
         const rel = resolveImage(ctx.assets!, name)
         if (rel) {
-          const url = assetUrl(rel)
-          return (
-            <PreviewText
-              key={i}
-              label={name}
-              title={seg}
-              onPreview={() => ctx.onImage(url, seg)}
-            />
-          )
+          return <PreviewText key={i} label={name} title={seg} />
         }
         return (
           <span
@@ -158,12 +127,7 @@ export function SpriteSlotCell(p: CustomCellRendererProps) {
         names.map((name, i) => {
           const rel = resolveImage(ctx.assets!, name)
           return rel ? (
-            <PreviewText
-              key={i}
-              label={name}
-              title={name}
-              onPreview={() => ctx.onImage(assetUrl(rel), name)}
-            />
+            <PreviewText key={i} label={name} title={name} />
           ) : (
             <span key={i} title={name} className="truncate text-[12px]">
               {name}
@@ -410,7 +374,7 @@ export function BgCell(p: CustomCellRendererProps) {
     >
       {color && <span className="h-4 w-4 shrink-0 rounded ring-1 ring-app-border" style={{ background: color }} />}
       {raw && rel ? (
-        <PreviewText label={raw} title={`预览 ${raw}`} onPreview={() => ctx.onImage(assetUrl(rel), raw)} />
+        <PreviewText label={raw} title={raw} />
       ) : raw ? (
         <span className="truncate text-[12px]">{raw}</span>
       ) : (

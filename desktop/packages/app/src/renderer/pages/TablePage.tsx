@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import {
+  type CellClickedEvent,
   type CellValueChangedEvent,
   type ColDef,
   type GetRowIdParams,
@@ -11,6 +12,7 @@ import { Download, FileSpreadsheet, Save, RotateCcw, X } from 'lucide-react'
 import { TABLE_COLUMNS, type TableRow } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
 import { spritePositionsFromConfig } from '@e2r/core/tts'
+import { resolveImage } from '@e2r/core/assets'
 import type { CellEdit } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { useCharactersStore } from '../stores/useCharactersStore'
@@ -22,11 +24,15 @@ import {
   type GridContext,
 } from '../components/cellRenderers'
 import { SheetTabs, appGridTheme, defaultGridColDef } from '../components/dataGrid'
+import { assetUrl } from '../lib/asset'
 
 type Row = Record<string, string | number>
+type AnchorRect = { left: number; right: number; top: number; bottom: number }
+type ImagePreview = { url: string; title: string; anchor: AnchorRect; avoidLeft?: number }
 type RowDataCacheEntry = { sourceRows: TableRow[]; spriteKey: string; rows: Row[] }
 const EFFECTIVE_ROLE_FIELD = '__effectiveRole'
 const LARGE_TEXT = new Set(['text', 'voice_text', 'remark'])
+const IMAGE_PREVIEW_FIELDS = new Set(['background', 'sprite_left', 'sprite_mid', 'sprite_right'])
 const RENDERERS: Record<string, ColDef<Row>['cellRenderer']> = {
   background: BgCell,
   music: AudioCell,
@@ -39,6 +45,34 @@ const SPRITE_SUB: { field: string; header: string; width: number }[] = [
   { field: 'sprite_right', header: '立绘·右', width: 112 },
 ]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
+
+function eventCellRect(event: Event | null | undefined): AnchorRect | null {
+  const target = event?.target instanceof HTMLElement ? event.target : null
+  const cell = target?.closest('.ag-cell') as HTMLElement | null
+  const rect = cell?.getBoundingClientRect()
+  return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } : null
+}
+
+function firstImageName(field: string, row: Row): string {
+  const raw = String(row[field] ?? '').trim()
+  if (!raw) return ''
+  if (field === 'background') return raw
+  return raw.split(';').map((s) => s.trim()).filter(Boolean)[0] ?? ''
+}
+
+function rightEdgeOfSpriteColumns(root: HTMLElement | null): number | undefined {
+  if (!root) return undefined
+  let right = 0
+  root
+    .querySelectorAll<HTMLElement>(
+      '[col-id="sprite_left"], [col-id="sprite_mid"], [col-id="sprite_right"]',
+    )
+    .forEach((el) => {
+      const r = el.getBoundingClientRect()
+      if (r.width > 0 && r.right > right) right = r.right
+    })
+  return right > 0 ? right : undefined
+}
 
 function recomputeEffectiveRoles(rows: Row[]): void {
   let current = ''
@@ -77,12 +111,13 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   const [status, setStatus] = useState<string | null>(null)
   const [query, setQuery] = useState('')
 
-  const [img, setImg] = useState<{ url: string; title: string } | null>(null)
+  const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null)
   const [audio, setAudio] = useState<{ url: string; title: string } | null>(null)
 
   const edits = useRef(new Map<string, CellEdit>())
   const [dirty, setDirty] = useState(0)
   const gridApi = useRef<GridApi<Row> | null>(null)
+  const gridShell = useRef<HTMLDivElement>(null)
   const rowDataCache = useRef(new Map<string, RowDataCacheEntry>())
   const lastWorkbookPath = useRef('')
 
@@ -95,6 +130,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     setActive(0)
     setLocalError(null)
     setStatus(null)
+    setImagePreview(null)
   }, [workbookPath])
 
   useEffect(() => {
@@ -121,6 +157,10 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     if (tableError) setLocalError(null)
   }, [tableError])
 
+  useEffect(() => {
+    setImagePreview(null)
+  }, [active, assets])
+
   // 角色配置会影响立绘三列拆分结果，缓存必须失效。
   const spriteKey = useMemo(() => JSON.stringify(spritePositions), [spritePositions])
 
@@ -140,7 +180,12 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     () => ({
       assets: assets ? { images: assets.images, audio: assets.audio } : null,
       ttsConfig,
-      onImage: (url, title) => setImg({ url, title }),
+      onImage: (url, title) =>
+        setImagePreview({
+          url,
+          title,
+          anchor: { left: window.innerWidth - 340, right: window.innerWidth - 328, top: 120, bottom: 140 },
+        }),
       onAudio: (url, title) => setAudio({ url, title }),
       onImport: async (kind, currentValue) => {
         if (!workbookPath || !assets) return null
@@ -242,6 +287,30 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   const onGridReady = useCallback((e: GridReadyEvent<Row>) => {
     gridApi.current = e.api
   }, [])
+
+  const onCellClicked = useCallback(
+    (e: CellClickedEvent<Row>) => {
+      const field = e.colDef.field
+      if (!assets || !field || !IMAGE_PREVIEW_FIELDS.has(field) || !e.data) {
+        setImagePreview(null)
+        return
+      }
+      const name = firstImageName(field, e.data)
+      const rel = name ? resolveImage(assets, name) : null
+      const anchor = eventCellRect(e.event)
+      if (!rel || !anchor) {
+        setImagePreview(null)
+        return
+      }
+      setImagePreview({
+        url: assetUrl(rel),
+        title: name,
+        anchor,
+        avoidLeft: field.startsWith('sprite_') ? rightEdgeOfSpriteColumns(gridShell.current) : undefined,
+      })
+    },
+    [assets],
+  )
 
   const onCellValueChanged = useCallback(
     (e: CellValueChangedEvent<Row>) => {
@@ -408,7 +477,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
 
       <section className="glass-card relative min-h-0 flex-1 overflow-hidden">
         {sheet && sheet.rows.length > 0 ? (
-          <div className="h-full w-full">
+          <div ref={gridShell} className="h-full w-full">
             <AgGridReact<Row>
               theme={appGridTheme}
               context={context}
@@ -418,7 +487,9 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
               rowData={rowData}
               quickFilterText={query}
               onGridReady={onGridReady}
+              onCellClicked={onCellClicked}
               onCellValueChanged={onCellValueChanged}
+              onBodyScroll={() => setImagePreview(null)}
               stopEditingWhenCellsLoseFocus
               animateRows={false}
             />
@@ -433,24 +504,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         )}
       </section>
 
-      {/* 图片灯箱 */}
-      {img && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setImg(null)}
-        >
-          <div className="max-h-[86vh] max-w-[86vw]" onClick={(e) => e.stopPropagation()}>
-            <img src={img.url} className="max-h-[80vh] max-w-[86vw] rounded-lg object-contain shadow-2xl" />
-            <div className="mt-2 text-center font-mono text-[12px] text-white/80">{img.title}</div>
-          </div>
-          <button
-            className="absolute right-5 top-5 text-white/70 hover:text-white"
-            onClick={() => setImg(null)}
-          >
-            <X size={22} />
-          </button>
-        </div>
-      )}
+      {imagePreview && <ImageSidePreview preview={imagePreview} onClose={() => setImagePreview(null)} />}
 
       {/* 音频播放条 */}
       {audio && (
@@ -463,6 +517,46 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function ImageSidePreview(props: { preview: ImagePreview; onClose: () => void }) {
+  const { preview } = props
+  const width = 300
+  const height = 320
+  const gutter = 10
+  const minLeft = preview.avoidLeft ? preview.avoidLeft + gutter : 8
+  const rightSide = Math.max(preview.anchor.right + gutter, minLeft)
+  const canUseRight = rightSide + width <= window.innerWidth - 12
+  const leftSide = preview.anchor.left - width - gutter
+  const canUseLeft = leftSide >= minLeft
+  const left = canUseRight
+    ? rightSide
+    : canUseLeft
+      ? leftSide
+      : Math.max(minLeft, window.innerWidth - width - 12)
+  const top = Math.max(12, Math.min(preview.anchor.top - 14, window.innerHeight - height - 12))
+
+  return (
+    <div
+      style={{ left, top, width, height }}
+      className="fixed z-40 flex flex-col overflow-hidden rounded-xl border border-app-border bg-app-surface shadow-[0_18px_55px_-16px_rgb(15_23_42_/_0.35)]"
+    >
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-app-border px-3">
+        <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-app-text">{preview.title}</span>
+        <button
+          type="button"
+          onClick={props.onClose}
+          className="flex h-6 w-6 items-center justify-center rounded text-app-muted hover:bg-black/5 hover:text-app-text dark:hover:bg-white/10"
+          aria-label="关闭预览"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 bg-[linear-gradient(45deg,rgb(148_163_184_/_0.12)_25%,transparent_25%,transparent_75%,rgb(148_163_184_/_0.12)_75%),linear-gradient(45deg,rgb(148_163_184_/_0.12)_25%,transparent_25%,transparent_75%,rgb(148_163_184_/_0.12)_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px] p-3">
+        <img src={preview.url} alt={preview.title} className="h-full w-full object-contain" />
+      </div>
     </div>
   )
 }
