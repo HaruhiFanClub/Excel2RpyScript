@@ -190,6 +190,7 @@ export default function TtsPage() {
 
   const activeSheet = jobSheets.find((s) => s.key === activeSheetKey) ?? jobSheets[0]
   const activeJobs = activeSheet?.jobs ?? []
+  const activeAppliable = activeJobs.filter((j) => j.status === 'generated' || j.status === 'stale')
 
   const context = useMemo<TtsGridContext>(
     () => ({
@@ -325,7 +326,7 @@ export default function TtsPage() {
             className="flex h-9 items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3.5 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 disabled:opacity-50 dark:text-emerald-300"
             title="把已生成的语音全部应用到 workspace（关联工程则同时覆盖到工程）"
           >
-            <CheckCheck size={14} /> 应用全部{appliable.length ? ` (${appliable.length})` : ''}
+            <CheckCheck size={14} /> 应用所有 sheet{appliable.length ? ` (${appliable.length})` : ''}
           </button>
           <button
             type="button"
@@ -333,7 +334,7 @@ export default function TtsPage() {
             disabled={!workbookPath || busy || jobs.length === 0}
             className="flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-4 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:opacity-50"
           >
-            {busy ? <span className="spinner" /> : <Wand2 size={14} />} 合成全部
+            {busy ? <span className="spinner" /> : <Wand2 size={14} />} 合成所有 sheet
           </button>
         </div>
       </header>
@@ -399,6 +400,36 @@ export default function TtsPage() {
           activeKey={activeSheet?.key ?? ''}
           onChange={setActiveSheetKey}
         />
+      )}
+
+      {activeSheet && (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-app-border bg-white/35 px-3 py-2 text-[12px] dark:bg-zinc-900/25">
+          <span className="min-w-0 truncate text-app-muted">
+            当前 sheet：<span className="font-medium text-app-text">{activeSheet.name}</span>
+            <span className="ml-2">共 {activeJobs.length} 句</span>
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => apply(activeAppliable.map((j) => j.outputName))}
+              disabled={busy || activeAppliable.length === 0}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 disabled:opacity-50 dark:text-emerald-300"
+              title="只应用当前 sheet 中已生成或未重新生成的语音"
+            >
+              <CheckCheck size={13} /> 应用当前 sheet
+              {activeAppliable.length ? ` (${activeAppliable.length})` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => synth(activeJobs.map((j) => j.outputName))}
+              disabled={!workbookPath || busy || activeJobs.length === 0}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-sky-500 px-3 text-[12px] font-medium text-white shadow-sm shadow-sky-500/20 transition-all hover:bg-sky-600 disabled:opacity-50"
+              title="只合成当前 sheet 中的全部 TTS 语句"
+            >
+              {busy ? <span className="spinner" /> : <Wand2 size={13} />} 合成当前 sheet
+            </button>
+          </div>
+        </div>
       )}
 
       <section className="glass-card custom-scrollbar min-h-0 flex-1 overflow-auto">
