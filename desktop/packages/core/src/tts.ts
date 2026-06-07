@@ -53,25 +53,28 @@ export function planTtsJobs(sheets: ParsedSheet[], opts: PlanTtsOptions): TtsJob
   return jobs
 }
 
-// ---- 配置（config.json 预设） ----
-// 两种服务模式：
-//  remote   远端服务：API 调用服务器，按角色切自定义模型（role_model_mapping）。凉宫春日内置预设属此。
-//  embedded 内嵌服务：本地引擎 zero-shot 推理，角色只是给参考音频分组（不切模型）。
+// ---- 配置（统一的角色配置） ----
+// 不再有全局「服务模式」：每个角色自带类型，按角色判定——
+//  远端角色：带模型权重(gpt/sovits)+ API 端点，合成时切自定义模型（凉宫春日系列内置角色属此，锁定不可编辑）。
+//  内嵌角色：用户在界面里新建，无模型权重，靠本地引擎 zero-shot + 参考音频克隆音色。
 export type ServiceMode = 'remote' | 'embedded'
 
 export interface RoleModel {
   gpt: string
   sovits: string
-  aliases?: string[] // 该模型额外绑定的第一列角色名（一个模型绑定多个角色名）
+  aliases?: string[] // 该角色额外绑定的第一列角色名（名称/别名对应上即自动绑定）
+  enabled?: boolean // 是否在软件中启用（启用才进表格角色下拉、语音指令过滤）；缺省视为启用
+  builtin?: boolean // 内置远端角色（凉宫春日系列）：锁定，不可展开/编辑/删除，只能勾选
+  apiBaseUrl?: string // 远端角色专属端点（不在 UI 展示）；为空表示内嵌角色
 }
 export interface VoiceCmd {
   refAudioPath: string
   promptText: string
-  tone?: string // 语气（显示用，把语音指令编号映射为可读语气）
-  role?: string // 归属角色（embedded 模式下用于把参考音频分组到角色）
+  tone?: string // 语气描述（显示用，把语音指令编号映射为可读语气）
+  role?: string // 归属角色（把参考音频/语气分组到某个角色）
 }
 export interface TtsConfig {
-  serviceMode: ServiceMode
+  serviceMode: ServiceMode // 兼容旧字段，已不参与合成判定（按角色判定）
   apiBaseUrl: string
   roleModelMapping: Record<string, RoleModel>
   voiceCmdMapping: Record<string, VoiceCmd>
@@ -80,12 +83,68 @@ export interface TtsConfig {
   deepLApiKey?: string
 }
 
+// 角色是否启用（缺省视为启用，仅显式 false 才停用）
+export function isRoleEnabled(m: RoleModel): boolean {
+  return m.enabled !== false
+}
+
+// 角色是否为远端角色：带模型权重即按远端处理（切权重 + 走自定义端点）
+export function isRemoteRole(m: RoleModel | undefined): m is RoleModel {
+  return !!(m && (m.gpt || m.sovits))
+}
+
+// 角色名 → 模型条目（支持别名：一个角色绑定多个第一列角色名）
+export function modelForRole(cfg: TtsConfig, roleName: string): RoleModel | undefined {
+  const direct = cfg.roleModelMapping[roleName]
+  if (direct) return direct
+  for (const m of Object.values(cfg.roleModelMapping)) {
+    if (m.aliases?.includes(roleName)) return m
+  }
+  return undefined
+}
+
+// 第一列角色名 → 角色 key（直配或别名命中）。未命中则原样返回。
+export function resolveRoleKey(cfg: TtsConfig, name: string): string {
+  if (cfg.roleModelMapping[name]) return name
+  for (const [k, v] of Object.entries(cfg.roleModelMapping)) {
+    if (v.aliases?.includes(name)) return k
+  }
+  return name
+}
+
+// 已启用角色名列表（用于表格角色列下拉）
+export function enabledRoleNames(cfg: TtsConfig): string[] {
+  return Object.entries(cfg.roleModelMapping)
+    .filter(([, m]) => isRoleEnabled(m))
+    .map(([name]) => name)
+}
+
+// 某角色名下的语音指令（语气）列表：按 voiceCmd.role 归一到该角色。
+// 未配置任何归属时回退「全部指令」（兼容尚未分组的配置）。
+export function tonesForRole(cfg: TtsConfig, name: string): string[] {
+  const roleKey = resolveRoleKey(cfg, name)
+  const all = Object.keys(cfg.voiceCmdMapping)
+  const anyGrouped = all.some((k) => cfg.voiceCmdMapping[k]?.role)
+  if (!anyGrouped) return all
+  return all.filter((k) => {
+    const r = cfg.voiceCmdMapping[k]?.role
+    return r ? resolveRoleKey(cfg, r) === roleKey : false
+  })
+}
+
 // 解析旧 config.json（snake_case / API_BASE_URL.base）为 TtsConfig
 export function parseLegacyTtsConfig(json: unknown): TtsConfig {
   const j = (json ?? {}) as Record<string, unknown>
   const roleSrc = (j['role_model_mapping'] ?? {}) as Record<
     string,
-    { gpt?: string; sovits?: string; aliases?: string[] }
+    {
+      gpt?: string
+      sovits?: string
+      aliases?: string[]
+      enabled?: boolean
+      builtin?: boolean
+      api_base_url?: string
+    }
   >
   const cmdSrc = (j['voice_cmd_mapping'] ?? {}) as Record<
     string,
@@ -97,6 +156,9 @@ export function parseLegacyTtsConfig(json: unknown): TtsConfig {
       gpt: v.gpt ?? '',
       sovits: v.sovits ?? '',
       ...(Array.isArray(v.aliases) ? { aliases: v.aliases } : {}),
+      ...(typeof v.enabled === 'boolean' ? { enabled: v.enabled } : {}),
+      ...(v.builtin ? { builtin: true } : {}),
+      ...(v.api_base_url ? { apiBaseUrl: v.api_base_url } : {}),
     }
   const voiceCmdMapping: Record<string, VoiceCmd> = {}
   for (const [k, v] of Object.entries(cmdSrc))
@@ -139,9 +201,26 @@ export function toneFor(cfg: TtsConfig, voiceCmd: string): string {
 
 // 序列化为旧 config.json 结构（与旧工具/预设兼容）
 export function serializeTtsConfig(cfg: TtsConfig): unknown {
-  const role: Record<string, { gpt: string; sovits: string; aliases?: string[] }> = {}
+  const role: Record<
+    string,
+    {
+      gpt: string
+      sovits: string
+      aliases?: string[]
+      enabled?: boolean
+      builtin?: boolean
+      api_base_url?: string
+    }
+  > = {}
   for (const [k, v] of Object.entries(cfg.roleModelMapping))
-    role[k] = { gpt: v.gpt, sovits: v.sovits, ...(v.aliases?.length ? { aliases: v.aliases } : {}) }
+    role[k] = {
+      gpt: v.gpt,
+      sovits: v.sovits,
+      ...(v.aliases?.length ? { aliases: v.aliases } : {}),
+      ...(typeof v.enabled === 'boolean' ? { enabled: v.enabled } : {}),
+      ...(v.builtin ? { builtin: true } : {}),
+      ...(v.apiBaseUrl ? { api_base_url: v.apiBaseUrl } : {}),
+    }
   const cmd: Record<
     string,
     { ref_audio_path: string; prompt_text: string; tone?: string; role?: string }
@@ -166,18 +245,18 @@ export function serializeTtsConfig(cfg: TtsConfig): unknown {
 
 // 合成输入签名：用于「改过但未重新生成」检测
 export function ttsJobSignature(job: TtsJob, cfg: TtsConfig, textLang: string): string {
-  const remote = cfg.serviceMode === 'remote'
-  const model = remote ? cfg.roleModelMapping[job.roleName] : undefined
+  const model = modelForRole(cfg, job.roleName)
+  const remote = isRemoteRole(model)
   const cmd = cfg.voiceCmdMapping[job.voiceCmd]
   return [
     job.roleName,
     job.text,
     job.voiceCmd,
     textLang,
-    cfg.serviceMode,
-    remote ? cfg.apiBaseUrl : '',
-    model?.gpt ?? '',
-    model?.sovits ?? '',
+    remote ? 'remote' : 'embedded',
+    remote ? model.apiBaseUrl || cfg.apiBaseUrl : '',
+    remote ? model.gpt : '',
+    remote ? model.sovits : '',
     cmd?.refAudioPath ?? cfg.defaultPromptAudio,
     cmd?.promptText ?? cfg.defaultPromptText,
   ].join('')

@@ -1,10 +1,58 @@
 // 自动从 config.json 生成的内置预设（凉宫春日，远端服务）。请勿手改；更新请重新生成。
-import type { TtsConfig } from "./tts"
+import { deriveTone, type TtsConfig } from "./tts"
 
 export interface BuiltinPreset {
   id: string
   name: string
   config: TtsConfig
+}
+
+// 内置远端角色的 API 端点（不在 UI 展示）
+const HARUHI_REMOTE_API = "https://tts.haruyuki.cn/"
+
+// 参考音频所在文件夹名 → 角色名（把每条语音指令归属到对应内置角色）
+const FOLDER_TO_ROLE: Record<string, string> = {
+  正常有希: "长门有希",
+  消失有希: "长门有希（消失）",
+  凉宫春日: "凉宫春日",
+  阿虚: "阿虚",
+  古泉一树: "古泉一树",
+  朝比奈实玖瑠: "朝比奈实玖瑠",
+  大朝比奈: "朝比奈实玖瑠（大）",
+  虚妹: "虚妹",
+  中河: "中河",
+  朝仓凉子: "朝仓凉子",
+  鹤屋: "鹤屋学姐",
+}
+
+// 取 ref_audio_path 的所属文件夹名（倒数第二段）
+function refFolder(p: string): string {
+  const parts = p.split(/[\\/]/).filter(Boolean)
+  return parts.length >= 2 ? parts[parts.length - 2]! : ""
+}
+
+// 把原始远端配置富化为「内置角色」：标记 builtin/启用、注入端点、给每条语音指令归属角色与语气。
+// 内置角色锁定（不可编辑/删除），UI 不展示其模型与端点。
+function enrichBuiltinRemote(base: TtsConfig): TtsConfig {
+  const roleModelMapping: TtsConfig["roleModelMapping"] = {}
+  for (const [name, m] of Object.entries(base.roleModelMapping)) {
+    roleModelMapping[name] = {
+      ...m,
+      enabled: m.enabled ?? true,
+      builtin: true,
+      apiBaseUrl: m.apiBaseUrl ?? HARUHI_REMOTE_API,
+    }
+  }
+  const voiceCmdMapping: TtsConfig["voiceCmdMapping"] = {}
+  for (const [cmd, v] of Object.entries(base.voiceCmdMapping)) {
+    const role = v.role ?? FOLDER_TO_ROLE[refFolder(v.refAudioPath)]
+    voiceCmdMapping[cmd] = {
+      ...v,
+      ...(role ? { role } : {}),
+      tone: v.tone ?? deriveTone(v.refAudioPath),
+    }
+  }
+  return { ...base, apiBaseUrl: HARUHI_REMOTE_API, roleModelMapping, voiceCmdMapping }
 }
 
 const HARUHI_REMOTE: TtsConfig = {
@@ -663,10 +711,18 @@ const HARUHI_REMOTE: TtsConfig = {
   "deepLApiKey": ""
 }
 
+// 富化后的内置远端角色配置（凉宫春日系列：锁定、自带端点与语气归属）
+export const HARUHI_REMOTE_BUILTIN: TtsConfig = enrichBuiltinRemote(HARUHI_REMOTE)
+
 export const BUILTIN_PRESETS: BuiltinPreset[] = [
-  { id: "haruhi-remote", name: "凉宫春日（远端服务）", config: HARUHI_REMOTE },
+  { id: "haruhi-remote", name: "凉宫春日（远端服务）", config: HARUHI_REMOTE_BUILTIN },
 ]
 
 export function builtinPreset(id: string): TtsConfig | undefined {
   return BUILTIN_PRESETS.find((p) => p.id === id)?.config
+}
+
+// 内置角色（凉宫春日系列）的角色名集合——用于在合并配置时锁定/识别
+export function builtinRoleNames(): string[] {
+  return Object.keys(HARUHI_REMOTE_BUILTIN.roleModelMapping)
 }

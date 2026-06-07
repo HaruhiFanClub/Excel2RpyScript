@@ -5,6 +5,9 @@ import {
   ttsJobSignature,
   serializeTtsConfig,
   deriveTone,
+  resolveRoleKey,
+  enabledRoleNames,
+  tonesForRole,
 } from '../src/tts'
 import { builtinPreset, BUILTIN_PRESETS } from '../src/presets'
 import { runPipeline, type ParsedSheet } from '../src/index'
@@ -125,16 +128,65 @@ describe('parseLegacyTtsConfig / 签名', () => {
     expect(ttsJobSignature(j1, cfg, 'auto')).not.toBe(ttsJobSignature(j2, cfg, 'auto'))
   })
 
-  it('切模式 / 换远端端点 → 签名变化（标记未重新生成）', () => {
+  it('角色有模型→远端、无模型→内嵌；远端换端点/权重 → 签名变化', () => {
     const sheets = [sheet('S', [row({ role_name: 'A', text: 't', voice: 'tts', voice_cmd: 'c1' })])]
     const j = planTtsJobs(sheets, { useVoiceText: false })[0]!
-    const remote = parseLegacyTtsConfig({ service_mode: 'remote', API_BASE_URL: { base: 'http://a/' } })
-    const embedded = parseLegacyTtsConfig({ service_mode: 'embedded', API_BASE_URL: { base: 'http://a/' } })
-    const remote2 = parseLegacyTtsConfig({ service_mode: 'remote', API_BASE_URL: { base: 'http://b/' } })
-    expect(ttsJobSignature(j, remote, 'auto')).not.toBe(ttsJobSignature(j, embedded, 'auto'))
-    expect(ttsJobSignature(j, remote, 'auto')).not.toBe(ttsJobSignature(j, remote2, 'auto'))
-    // 内嵌换端点不影响（用内置引擎）
-    const embedded2 = parseLegacyTtsConfig({ service_mode: 'embedded', API_BASE_URL: { base: 'http://b/' } })
+    const embedded = parseLegacyTtsConfig({
+      role_model_mapping: { A: { gpt: '', sovits: '' } },
+      API_BASE_URL: { base: 'http://a/' },
+    })
+    const remote = parseLegacyTtsConfig({
+      role_model_mapping: { A: { gpt: 'g', sovits: 's', api_base_url: 'http://a/' } },
+    })
+    const remoteEndpoint = parseLegacyTtsConfig({
+      role_model_mapping: { A: { gpt: 'g', sovits: 's', api_base_url: 'http://b/' } },
+    })
+    const remoteWeights = parseLegacyTtsConfig({
+      role_model_mapping: { A: { gpt: 'g2', sovits: 's', api_base_url: 'http://a/' } },
+    })
+    // 内嵌 vs 远端
+    expect(ttsJobSignature(j, embedded, 'auto')).not.toBe(ttsJobSignature(j, remote, 'auto'))
+    // 远端换端点 / 换权重
+    expect(ttsJobSignature(j, remote, 'auto')).not.toBe(ttsJobSignature(j, remoteEndpoint, 'auto'))
+    expect(ttsJobSignature(j, remote, 'auto')).not.toBe(ttsJobSignature(j, remoteWeights, 'auto'))
+    // 内嵌换全局端点不影响（走本地引擎）
+    const embedded2 = parseLegacyTtsConfig({
+      role_model_mapping: { A: { gpt: '', sovits: '' } },
+      API_BASE_URL: { base: 'http://b/' },
+    })
     expect(ttsJobSignature(j, embedded, 'auto')).toBe(ttsJobSignature(j, embedded2, 'auto'))
+  })
+})
+
+describe('角色配置 helpers', () => {
+  it('内置远端角色：锁定 + 端点 + 语音指令归属角色', () => {
+    const cfg = builtinPreset('haruhi-remote')!
+    expect(cfg.roleModelMapping['凉宫春日']?.builtin).toBe(true)
+    expect(cfg.roleModelMapping['凉宫春日']?.apiBaseUrl).toBeTruthy()
+    expect(cfg.voiceCmdMapping['haruhi_1']?.role).toBe('凉宫春日')
+    expect(tonesForRole(cfg, '凉宫春日')).toContain('haruhi_1')
+    expect(tonesForRole(cfg, '凉宫春日')).not.toContain('kyon_1')
+  })
+
+  it('resolveRoleKey 命中别名，未命中原样返回', () => {
+    const cfg = parseLegacyTtsConfig({
+      role_model_mapping: { 阿虚: { gpt: 'g', sovits: 's', aliases: ['Kyon'] } },
+    })
+    expect(resolveRoleKey(cfg, 'Kyon')).toBe('阿虚')
+    expect(resolveRoleKey(cfg, '未知')).toBe('未知')
+  })
+
+  it('enabledRoleNames 仅含启用角色（缺省视为启用）', () => {
+    const cfg = parseLegacyTtsConfig({
+      role_model_mapping: {
+        A: { gpt: '', sovits: '', enabled: true },
+        B: { gpt: '', sovits: '', enabled: false },
+        C: { gpt: '', sovits: '' },
+      },
+    })
+    const names = enabledRoleNames(cfg)
+    expect(names).toContain('A')
+    expect(names).toContain('C')
+    expect(names).not.toContain('B')
   })
 })
