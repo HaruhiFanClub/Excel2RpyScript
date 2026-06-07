@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { E2rApi } from '../shared/ipc'
 
 declare global {

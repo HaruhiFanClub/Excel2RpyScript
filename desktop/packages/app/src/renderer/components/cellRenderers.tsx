@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { CustomCellRendererProps } from 'ag-grid-react'
-import { Play, Music, Upload, ChevronDown, Check, Search, Plus } from 'lucide-react'
+import { Play, Upload, ChevronDown, Check, Search, Plus } from 'lucide-react'
 import {
   spriteImageName,
   resolveImage,
@@ -20,21 +20,89 @@ export interface GridContext {
   ttsConfig: TtsConfig | null
   onImage: (url: string, title: string) => void
   onAudio: (url: string, title: string) => void
-  onImport: (kind: WsAssetType, name: string) => void
+  onImport: (kind: WsAssetType, currentValue: string) => Promise<string | null>
 }
 
 const ctxOf = (p: CustomCellRendererProps): GridContext => p.context as GridContext
 
-// 关联工程但未命中资源时的「导入」按钮
-function ImportBtn(props: { onClick: () => void }) {
+function plainText(value: string) {
+  return value ? <span className="truncate text-[12px]">{value}</span> : null
+}
+
+function importedCellValue(kind: WsAssetType, currentValue: string, imported: string): string {
+  if (kind === 'sound' && currentValue.trim().startsWith('循环')) return `循环${imported}`
+  return imported
+}
+
+function PreviewText(props: { label: string; title: string; onPreview: () => void }) {
+  const timer = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timer.current != null) window.clearTimeout(timer.current)
+    }
+  }, [])
+
+  const cancel = () => {
+    if (timer.current == null) return
+    window.clearTimeout(timer.current)
+    timer.current = null
+  }
+
+  return (
+    <span
+      title={props.title}
+      onClick={(e) => {
+        if (e.detail > 1) return
+        cancel()
+        timer.current = window.setTimeout(() => {
+          timer.current = null
+          props.onPreview()
+        }, 220)
+      }}
+      onDoubleClick={cancel}
+      className="cursor-pointer truncate rounded px-1 text-left text-[12px] text-sky-700 hover:bg-sky-400/10 dark:text-sky-200"
+    >
+      {props.label}
+    </span>
+  )
+}
+
+async function importIntoCell(p: CustomCellRendererProps, kind: WsAssetType, currentValue: string): Promise<void> {
+  const ctx = ctxOf(p)
+  const field = p.colDef?.field
+  if (!field) return
+  const imported = await ctx.onImport(kind, currentValue)
+  if (!imported) return
+  p.node?.setDataValue?.(field, importedCellValue(kind, currentValue, imported))
+}
+
+// 关联工程时的导入/替换按钮：和下拉按钮一样，仅在悬浮/聚焦单元格时显示。
+function ImportBtn(props: { label: string; onClick: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const click = async (e: ReactMouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try {
+      await props.onClick()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <button
       type="button"
-      onClick={props.onClick}
-      className="flex h-5 shrink-0 items-center gap-0.5 rounded border border-dashed border-app-border px-1 text-[10px] text-app-muted hover:border-sky-400 hover:text-sky-500"
-      title="导入到工程"
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={click}
+      style={busy ? { opacity: 1 } : undefined}
+      className="e2r-asset-action flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-app-border text-app-muted hover:border-sky-400 hover:text-sky-500"
+      title={props.label}
+      aria-label={props.label}
     >
-      <Upload size={10} /> 导入
+      {busy ? <span className="spinner !h-2.5 !w-2.5" /> : <Upload size={10} />}
     </button>
   )
 }
@@ -44,21 +112,21 @@ export function SpriteCell(p: CustomCellRendererProps) {
   const ctx = ctxOf(p)
   const raw = String(p.value ?? '').trim()
   if (!raw) return null
+  if (!ctx.assets) return plainText(raw)
   const segs = raw.split(';').map((s) => s.trim()).filter(Boolean)
   return (
     <div className="flex h-full items-center gap-1.5 overflow-hidden">
       {segs.map((seg, i) => {
         const name = spriteImageName(seg)
-        const rel = ctx.assets ? resolveImage(ctx.assets, name) : null
+        const rel = resolveImage(ctx.assets!, name)
         if (rel) {
           const url = assetUrl(rel)
           return (
-            <img
+            <PreviewText
               key={i}
-              src={url}
+              label={name}
               title={seg}
-              onClick={() => ctx.onImage(url, seg)}
-              className="h-7 w-auto max-w-[44px] cursor-pointer rounded object-contain ring-1 ring-app-border"
+              onPreview={() => ctx.onImage(url, seg)}
             />
           )
         }
@@ -80,43 +148,47 @@ export function SpriteCell(p: CustomCellRendererProps) {
 export function SpriteSlotCell(p: CustomCellRendererProps) {
   const ctx = ctxOf(p)
   const raw = String(p.value ?? '').trim()
-  if (!raw) return null
-  const names = raw.split(';').map((s) => s.trim()).filter(Boolean)
+  if (!ctx.assets) return plainText(raw)
+  const names = raw ? raw.split(';').map((s) => s.trim()).filter(Boolean) : []
   return (
-    <div className="flex h-full items-center gap-2 overflow-hidden">
-      {names.map((name, i) => {
-        const rel = ctx.assets ? resolveImage(ctx.assets, name) : null
-        return (
-          <span key={i} className="flex items-center gap-1 overflow-hidden">
-            {rel && (
-              <img
-                src={assetUrl(rel)}
-                title={name}
-                onClick={() => ctx.onImage(assetUrl(rel), name)}
-                className="h-7 w-auto max-w-[40px] cursor-pointer rounded object-contain ring-1 ring-app-border"
-              />
-            )}
-            <span className="truncate text-[12px]">{name}</span>
-            {!rel && <ImportBtn onClick={() => ctx.onImport('sprite', name)} />}
-          </span>
-        )
-      })}
+    <div className="flex h-full w-full items-center gap-1.5 overflow-hidden">
+      {names.length === 0 ? (
+        <span className="truncate text-[12px] text-app-muted/40">—</span>
+      ) : (
+        names.map((name, i) => {
+          const rel = resolveImage(ctx.assets!, name)
+          return rel ? (
+            <PreviewText
+              key={i}
+              label={name}
+              title={name}
+              onPreview={() => ctx.onImage(assetUrl(rel), name)}
+            />
+          ) : (
+            <span key={i} title={name} className="truncate text-[12px]">
+              {name}
+            </span>
+          )
+        })
+      )}
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <ImportBtn
+          label={raw ? '替换' : '导入'}
+          onClick={() => importIntoCell(p, 'sprite', raw)}
+        />
+      </div>
     </div>
   )
 }
 
-// 该列在某行可选的下拉项：角色列=已启用角色(含别名)；语音指令列=该行角色对应的语气。
+// 该列在某行可选的下拉项：角色列=已启用角色主名称；语音指令列=该行角色对应的语气。
 function comboOptions(ctx: GridContext, field: string, row: Record<string, unknown>): string[] {
   const cfg = ctx.ttsConfig
   if (!cfg) return []
   if (field === 'role_name') {
-    const out = new Set<string>()
-    for (const [name, m] of Object.entries(cfg.roleModelMapping)) {
-      if (!isRoleEnabled(m)) continue
-      out.add(name)
-      for (const a of m.aliases ?? []) out.add(a)
-    }
-    return [...out]
+    return Object.entries(cfg.roleModelMapping)
+      .filter(([, m]) => isRoleEnabled(m))
+      .map(([name]) => name)
   }
   if (field === 'voice_cmd') return tonesForRole(cfg, String(row['role_name'] ?? ''))
   return []
@@ -134,6 +206,7 @@ export function ComboCell(p: CustomCellRendererProps) {
   const toneOf =
     field === 'voice_cmd' && ctx.ttsConfig ? (o: string) => toneFor(ctx.ttsConfig!, o) : undefined
   const tone = toneOf && value ? toneOf(value) : ''
+  const allowCustom = field !== 'voice_cmd'
 
   // 用「原生」dblclick 监听拦下下拉按钮上的双击：它在按钮本身（target）触发，
   // 早于 AG Grid 绑在祖先上的原生 dblclick（即「双击进入编辑」），从而只阻止按钮的双击、
@@ -156,7 +229,14 @@ export function ComboCell(p: CustomCellRendererProps) {
   }
 
   return (
-    <div className="flex h-full w-full items-center gap-1.5 overflow-hidden">
+    <div
+      className="flex h-full w-full items-center gap-1.5 overflow-hidden"
+      onDoubleClick={(e) => {
+        if (field !== 'voice_cmd') return
+        e.stopPropagation()
+        setOpen(true)
+      }}
+    >
       {value ? <span className="shrink-0">{value}</span> : <span className="text-app-muted/40">—</span>}
       {tone && tone !== value && <span className="truncate text-app-muted">{tone}</span>}
       <button
@@ -180,6 +260,7 @@ export function ComboCell(p: CustomCellRendererProps) {
           options={comboOptions(ctx, field, p.data ?? {})}
           value={value}
           toneOf={toneOf}
+          allowCustom={allowCustom}
           onPick={choose}
           onClose={() => setOpen(false)}
         />
@@ -194,6 +275,7 @@ function ComboPopup({
   options,
   value,
   toneOf,
+  allowCustom,
   onPick,
   onClose,
 }: {
@@ -201,6 +283,7 @@ function ComboPopup({
   options: string[]
   value: string
   toneOf?: (o: string) => string
+  allowCustom: boolean
   onPick: (v: string) => void
   onClose: () => void
 }) {
@@ -246,8 +329,8 @@ function ComboPopup({
     return t && t !== o ? `${o} ${t}` : o
   }
   const filtered = q ? options.filter((o) => label(o).toLowerCase().includes(q)) : options
-  // 允许自由输入：输入的内容不在选项里时，给一个「使用 “xxx”」的自定义项
-  const custom = raw && !options.includes(raw) ? raw : ''
+  // 角色名允许自由输入；语音指令/语气必须从候选项里选。
+  const custom = allowCustom && raw && !options.includes(raw) ? raw : ''
 
   return createPortal(
     <div
@@ -313,67 +396,72 @@ function ComboPopup({
   )
 }
 
-// 背景：缩略图 / 纯色色块 / 名称
+// 背景：未关联工程时纯文本；关联后可按单元格文本命中资源并预览/替换。
 export function BgCell(p: CustomCellRendererProps) {
   const ctx = ctxOf(p)
   const raw = String(p.value ?? '').trim()
-  if (!raw) return null
-  const rel = ctx.assets ? resolveImage(ctx.assets, raw) : null
-  if (rel) {
-    const url = assetUrl(rel)
-    return (
-      <div className="flex h-full items-center gap-1.5">
-        <img
-          src={url}
-          onClick={() => ctx.onImage(url, raw)}
-          className="h-6 w-10 cursor-pointer rounded object-cover ring-1 ring-app-border"
-        />
-        <span className="truncate text-[12px]">{raw}</span>
-      </div>
-    )
-  }
+  if (!ctx.assets) return plainText(raw)
+  const rel = raw ? resolveImage(ctx.assets, raw) : null
   const color = COLOR_WORDS[raw.toLowerCase()]
-  if (color) {
-    return (
-      <div className="flex h-full items-center gap-1.5">
-        <span className="h-5 w-5 rounded ring-1 ring-app-border" style={{ background: color }} />
-        <span className="text-[12px]">{raw}</span>
-      </div>
-    )
-  }
   return (
-    <div className="flex h-full items-center gap-1.5">
-      <span className="truncate text-[12px]">{raw}</span>
-      <ImportBtn onClick={() => ctx.onImport('background', raw)} />
+    <div
+      className="flex h-full w-full items-center gap-1.5 overflow-hidden"
+      title={rel ? `预览 ${raw}` : raw}
+    >
+      {color && <span className="h-4 w-4 shrink-0 rounded ring-1 ring-app-border" style={{ background: color }} />}
+      {raw && rel ? (
+        <PreviewText label={raw} title={`预览 ${raw}`} onPreview={() => ctx.onImage(assetUrl(rel), raw)} />
+      ) : raw ? (
+        <span className="truncate text-[12px]">{raw}</span>
+      ) : (
+        <span className="truncate text-[12px] text-app-muted/40">—</span>
+      )}
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <ImportBtn
+          label={raw ? '替换' : '导入'}
+          onClick={() => importIntoCell(p, 'background', raw)}
+        />
+      </div>
     </div>
   )
 }
 
-// 音乐 / 音效：可播放则给播放按钮
+// 音乐 / 音效：未关联工程时纯文本；关联后可按单元格文本试听/替换。
 export function AudioCell(p: CustomCellRendererProps) {
   const ctx = ctxOf(p)
   const raw = String(p.value ?? '').trim()
-  if (!raw) return null
+  if (!ctx.assets) return plainText(raw)
   const name = audioRefName(raw)
-  const rel = name && ctx.assets ? resolveAudio(ctx.assets, name) : null
+  const rel = name ? resolveAudio(ctx.assets, name) : null
+  const kind = p.colDef?.field === 'sound' ? 'sound' : 'music'
   return (
-    <div className="flex h-full items-center gap-1.5 overflow-hidden">
-      {rel ? (
-        <button
-          type="button"
-          onClick={() => ctx.onAudio(assetUrl(rel), raw)}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 transition-colors hover:bg-sky-500/30 dark:text-sky-300"
-          title={`播放 ${raw}`}
-        >
-          <Play size={11} />
-        </button>
+    <div className="flex h-full w-full items-center gap-1.5 overflow-hidden" title={raw}>
+      {raw ? (
+        <span className={`truncate text-[12px] ${rel ? 'text-sky-700 dark:text-sky-200' : ''}`}>{raw}</span>
       ) : (
-        <Music size={12} className="shrink-0 text-app-muted" />
+        <span className="truncate text-[12px] text-app-muted/40">—</span>
       )}
-      <span className="truncate text-[12px]">{raw}</span>
-      {!rel && name && (
-        <ImportBtn onClick={() => ctx.onImport(p.colDef?.field === 'sound' ? 'sound' : 'music', name)} />
-      )}
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {rel && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              ctx.onAudio(assetUrl(rel), raw)
+            }}
+            className="e2r-asset-action flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 transition-colors hover:bg-sky-500/30 dark:text-sky-300"
+            title={`播放 ${raw}`}
+          >
+            <Play size={11} />
+          </button>
+        )}
+        <ImportBtn
+          label={raw ? '替换' : '导入'}
+          onClick={() => importIntoCell(p, kind, raw)}
+        />
+      </div>
     </div>
   )
 }

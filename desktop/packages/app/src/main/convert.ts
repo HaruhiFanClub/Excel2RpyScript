@@ -1,23 +1,16 @@
-import { dirname } from 'node:path'
 import {
   readWorkbook,
   runPipeline,
-  writeRpyFiles,
   type PipelineOptions,
-  type ConversionMode,
 } from '@e2r/core'
 import type { ConvertArgs, ConvertResult, PreviewArgs, PreviewResult, RpyFile } from '../shared/ipc'
 
-function optsFor(mode: ConversionMode): PipelineOptions {
-  return mode === 'default'
-    ? { mode: 'default', normalizeMode: true, trimRoleNames: true }
-    : { mode: 'legacy-compat' }
-}
+const DEFAULT_OPTS: PipelineOptions = { mode: 'default', normalizeMode: true, trimRoleNames: true }
 
 // 读 + 转换（不落盘），供预览与导出共用。
-async function build(xlsxPath: string, mode: ConversionMode) {
+async function build(xlsxPath: string) {
   const { sheets, warnings: readWarnings } = await readWorkbook(xlsxPath)
-  const { files, warnings } = runPipeline(sheets, optsFor(mode))
+  const { files, warnings } = runPipeline(sheets, DEFAULT_OPTS)
   const rpy: RpyFile[] = files.map((f) => ({
     label: f.label,
     content: f.content,
@@ -28,7 +21,7 @@ async function build(xlsxPath: string, mode: ConversionMode) {
 
 export async function previewWorkbook(args: PreviewArgs): Promise<PreviewResult> {
   try {
-    const b = await build(args.xlsxPath, args.mode)
+    const b = await build(args.xlsxPath)
     return { ok: true, sheetNames: b.sheetNames, files: b.rpy, warnings: b.warnings, readWarningCount: b.readWarningCount }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -37,15 +30,11 @@ export async function previewWorkbook(args: PreviewArgs): Promise<PreviewResult>
 
 export async function convertWorkbook(args: ConvertArgs): Promise<ConvertResult> {
   try {
-    const b = await build(args.xlsxPath, args.mode)
-    const target = args.outDir ?? dirname(args.xlsxPath)
-    const paths = await writeRpyFiles(target, b.files)
-    const rpy: RpyFile[] = b.rpy.map((f, i) => ({ ...f, path: paths[i] ?? '' }))
+    const b = await build(args.xlsxPath)
     return {
       ok: true,
-      outDir: target,
       sheetNames: b.sheetNames,
-      files: rpy,
+      files: b.rpy,
       warnings: b.warnings,
       readWarningCount: b.readWarningCount,
     }

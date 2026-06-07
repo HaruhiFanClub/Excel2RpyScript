@@ -1,8 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } from 'electron'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename, extname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { writeFile, mkdir, copyFile } from 'node:fs/promises'
-import { extname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ttsHealth, planJobs, synthOne, enrichedJobs, applyVoices } from './tts'
 import { loadCharacters, saveCharacters } from './characters'
@@ -19,13 +18,11 @@ import {
   resolveGamePath,
   IMAGE_EXTS,
   AUDIO_EXTS,
-  rpyAudioFilename,
   diffWorkbooks,
   resolveAssetTarget,
   runPipeline,
   writeRpyFiles,
   type CellEdit,
-  type PipelineOptions,
   type TtsConfig,
 } from '@e2r/core'
 import { convertWorkbook, previewWorkbook } from './convert'
@@ -35,6 +32,7 @@ import type {
   PreviewArgs,
   PreviewResult,
   TableResult,
+  SaveAsResult,
   SaveResult,
   CheckResult,
   ProjectResult,
@@ -54,6 +52,8 @@ import type {
   FormatResult,
   ProjectManifest,
   ProjectReadResult,
+  RpyFile,
+  RpyFileWriteResult,
   WorkspaceImportResult,
 } from '../shared/ipc'
 import { readFile } from 'node:fs/promises'
@@ -70,13 +70,62 @@ let linkedTransforms: string[] = []
 let currentPendingDir: string | null = null // 当前表的临时语音目录（已生成、可试听）
 let currentVoiceDir: string | null = null // 当前表的已应用语音目录（workspace/<表>/voice）
 
+const runtimeIconPath = (): string =>
+  app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(__dirname, '../../build/icon.png')
+
+function uniqueAssetFilename(dir: string, original: string): string {
+  const ext = extname(original)
+  const stem = basename(original, ext)
+  let candidate = original
+  let i = 2
+  while (existsSync(join(dir, candidate))) {
+    candidate = `${stem}-${i}${ext}`
+    i += 1
+  }
+  return candidate
+}
+
+function importCellValue(kind: WsType, fileName: string): string {
+  const ext = extname(fileName)
+  const stem = basename(fileName, ext)
+  if (kind === 'music' || kind === 'sound') return ext.toLowerCase() === '.mp3' ? stem : fileName
+  return stem
+}
+
+function rpyFileName(label: string): string {
+  const stem = label.replace(/[\\/:*?"<>|]/g, '_').trim() || 'script'
+  return stem.toLowerCase().endsWith('.rpy') ? stem : `${stem}.rpy`
+}
+
+async function writeRpyFile(path: string, file: RpyFile): Promise<void> {
+  await writeFile(path, Buffer.from(file.content, 'utf-8'))
+}
+
+function ensureRpyPath(path: string): string {
+  return extname(path).toLowerCase() === '.rpy' ? path : `${path}.rpy`
+}
+
+function xlsxFileName(path: string): string {
+  const stem = basename(path, extname(path)).replace(/[\\/:*?"<>|]/g, '_').trim() || 'table'
+  return `${stem}.xlsx`
+}
+
+function ensureXlsxPath(path: string): string {
+  return extname(path).toLowerCase() === '.xlsx' ? path : `${path}.xlsx`
+}
+
 function createWindow(): void {
+  const iconPath = runtimeIconPath()
+  const hasIcon = existsSync(iconPath)
+  if (process.platform === 'darwin' && hasIcon) app.dock.setIcon(iconPath)
+
   const win = new BrowserWindow({
     width: 1240,
     height: 860,
     minWidth: 940,
     minHeight: 640,
     title: 'Excel2Rpy',
+    icon: hasIcon ? iconPath : undefined,
     backgroundColor: '#f4f6fb',
     show: false,
     ...(process.platform === 'darwin'
@@ -194,6 +243,30 @@ function registerIpc(): void {
   ipcMain.handle('convert', (_e, args: ConvertArgs): Promise<ConvertResult> =>
     convertWorkbook(args),
   )
+  ipcMain.handle('rpy:export', async (_e, file: RpyFile): Promise<RpyFileWriteResult> => {
+    try {
+      const r = await dialog.showSaveDialog({
+        defaultPath: rpyFileName(file.label),
+        filters: [{ name: 'Ren’Py 脚本', extensions: ['rpy'] }],
+      })
+      if (r.canceled || !r.filePath) return { ok: false, error: '' }
+      const target = ensureRpyPath(r.filePath)
+      await writeRpyFile(target, file)
+      return { ok: true, path: target }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
+  ipcMain.handle('rpy:apply', async (_e, file: RpyFile): Promise<RpyFileWriteResult> => {
+    try {
+      if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
+      const target = join(linkedGamePath, rpyFileName(file.label))
+      await writeRpyFile(target, file)
+      return { ok: true, path: target }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
   ipcMain.handle('format:validate', (_e, xlsxPath: string): Promise<FormatResult> =>
     validateFormat(xlsxPath),
   )
@@ -211,6 +284,24 @@ function registerIpc(): void {
       try {
         await saveTableEdits(xlsxPath, edits)
         return { ok: true }
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    },
+  )
+  ipcMain.handle(
+    'table:saveAs',
+    async (_e, xlsxPath: string, edits: CellEdit[]): Promise<SaveAsResult> => {
+      try {
+        const r = await dialog.showSaveDialog({
+          defaultPath: xlsxFileName(xlsxPath),
+          filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+        })
+        if (r.canceled || !r.filePath) return { ok: false, error: '' }
+        const target = ensureXlsxPath(r.filePath)
+        await saveTableEdits(xlsxPath, edits)
+        if (target !== xlsxPath) await copyFile(xlsxPath, target)
+        return { ok: true, path: target }
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) }
       }
@@ -248,12 +339,13 @@ function registerIpc(): void {
     }
   })
 
-  // 从表格新增资源：始终写入 workspace（按类型分文件夹、文件名精准对应 rpy），
-  // 关联工程时同时复制到工程 game/images|audio。无需关联工程也可新增（只进 workspace）。
+  // 从表格导入/替换资源：必须有关联工程，直接复制到 game/images|audio。
+  // 单元格值来自导入文件名；重名文件自动追加 -2/-3，避免覆盖已有素材。
   ipcMain.handle(
     'asset:import',
-    async (_e, kind: WsType, name: string, xlsxPath: string): Promise<AssetImportResult> => {
+    async (_e, kind: WsType, _currentValue: string, _xlsxPath: string): Promise<AssetImportResult> => {
       try {
+        if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
         const isAudio = kind === 'music' || kind === 'sound'
         const filters = isAudio
           ? [{ name: '音频', extensions: AUDIO_EXTS }]
@@ -261,23 +353,19 @@ function registerIpc(): void {
         const r = await dialog.showOpenDialog({ properties: ['openFile'], filters })
         const src = r.canceled ? null : r.filePaths[0]
         if (!src) return { ok: false, error: '' } // 取消
-        // 文件名精准对应 rpy：图片=名+源扩展（rpy 按名解析，扩展任意）；音频=rpyAudioFilename（名.mp3）
-        const fileName = isAudio ? rpyAudioFilename(name) : `${name}${extname(src)}`
-        // 1) workspace 副本（必有）：workspace/<表>/<类型>/<文件名>
-        const ws = dirname(xlsxPath)
-        const wsDir = workspaceSub(ws, kind)
-        await mkdir(wsDir, { recursive: true })
-        await copyFile(src, join(wsDir, fileName))
-        // 2) 关联工程时同时复制到 game/images|audio 并回扫资源索引
-        if (linkedGamePath) {
-          const sub = isAudio ? 'audio' : 'images'
-          await mkdir(join(linkedGamePath, sub), { recursive: true })
-          await copyFile(src, join(linkedGamePath, sub, fileName))
-          const index = await scanRenpyAssets(linkedGamePath)
-          linkedTransforms = index.transforms
-          return { ok: true, index }
+        const sub = isAudio ? 'audio' : 'images'
+        const targetDir = join(linkedGamePath, sub)
+        await mkdir(targetDir, { recursive: true })
+        const fileName = uniqueAssetFilename(targetDir, basename(src))
+        await copyFile(src, join(targetDir, fileName))
+        const index = await scanRenpyAssets(linkedGamePath)
+        linkedTransforms = index.transforms
+        return {
+          ok: true,
+          value: importCellValue(kind, fileName),
+          rel: `${sub}/${fileName}`,
+          index,
         }
-        return { ok: true }
       } catch (e) {
         return { ok: false, error: errMsg(e) }
       }
@@ -289,13 +377,13 @@ function registerIpc(): void {
     try {
       if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
       const { sheets } = await readWorkbook(args.xlsxPath)
-      const opts: PipelineOptions =
-        args.mode === 'default'
-          ? { mode: 'default', normalizeMode: true, trimRoleNames: true }
-          : { mode: 'legacy-compat' }
       const written: string[] = []
       if (args.scripts) {
-        const { files } = runPipeline(sheets, opts)
+        const { files } = runPipeline(sheets, {
+          mode: 'default',
+          normalizeMode: true,
+          trimRoleNames: true,
+        })
         await writeRpyFiles(linkedGamePath, files)
         written.push(...files.map((f) => `${f.label}.rpy`))
       }

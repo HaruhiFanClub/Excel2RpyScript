@@ -1,6 +1,5 @@
 // IPC 契约类型（main / preload / renderer 共享）
 import type {
-  ConversionMode,
   ConvertWarning,
   TableData,
   CellEdit,
@@ -11,7 +10,6 @@ import type {
   TtsJob,
   EnrichedJob,
   FormatResult,
-  SpritePositions,
 } from '@e2r/core'
 
 export type {
@@ -23,7 +21,6 @@ export type {
   TtsJob,
   EnrichedJob,
   FormatResult,
-  SpritePositions,
 }
 
 export interface TtsHealth {
@@ -73,7 +70,6 @@ export interface TtsSynthSummary {
 
 export interface DeployArgs {
   xlsxPath: string
-  mode: ConversionMode
   scripts: boolean // 写 .rpy 到 game/
   enableVoice: boolean // 写 e2r_config.rpy 启用 config.has_voice
 }
@@ -86,8 +82,6 @@ export interface ProjectManifest {
   version: 1
   workbook: string
   renpyProject?: string
-  mode: ConversionMode
-  spritePositions?: SpritePositions
 }
 export type ProjectReadResult =
   | { ok: true; manifest: ProjectManifest }
@@ -98,14 +92,15 @@ export type WorkspaceImportResult =
   | { ok: true; dir: string; copyPath: string }
   | { ok: false; error: string }
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
-// 新增资源到 workspace（+关联工程）。关联工程时回带最新资源索引；未关联则无 index。
+// 表格资源导入：仅在已关联工程时复制到 game/images|audio，并返回应写入单元格的资源名。
 export type WsAssetType = 'background' | 'sprite' | 'music' | 'sound'
 export type AssetImportResult =
-  | { ok: true; index?: AssetIndex }
+  | { ok: true; value: string; rel: string; index: AssetIndex }
   | { ok: false; error: string }
 export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
 export type SaveResult = { ok: true } | { ok: false; error: string }
+export type SaveAsResult = { ok: true; path: string } | { ok: false; error: string }
 
 export interface CheckSummary {
   error: number
@@ -118,11 +113,8 @@ export type CheckResult =
 
 export interface PreviewArgs {
   xlsxPath: string
-  mode: ConversionMode
 }
-export interface ConvertArgs extends PreviewArgs {
-  outDir: string | null // null → 用 xlsx 所在目录
-}
+export interface ConvertArgs extends PreviewArgs {}
 
 export interface RpyFile {
   label: string // 文件名（不含 .rpy）
@@ -140,7 +132,10 @@ export interface PreviewData {
 
 export type PreviewResult = ({ ok: true } & PreviewData) | { ok: false; error: string }
 export type ConvertResult =
-  | ({ ok: true; outDir: string } & PreviewData)
+  | ({ ok: true } & PreviewData)
+  | { ok: false; error: string }
+export type RpyFileWriteResult =
+  | { ok: true; path: string }
   | { ok: false; error: string }
 
 export interface E2rApi {
@@ -155,9 +150,12 @@ export interface E2rApi {
   writeProject(path: string, manifest: ProjectManifest): Promise<SaveResult>
   preview(args: PreviewArgs): Promise<PreviewResult>
   convert(args: ConvertArgs): Promise<ConvertResult>
+  exportRpyFile(file: RpyFile): Promise<RpyFileWriteResult>
+  applyRpyFile(file: RpyFile): Promise<RpyFileWriteResult>
   validateFormat(xlsxPath: string): Promise<FormatResult>
   readTable(xlsxPath: string): Promise<TableResult>
   saveTable(xlsxPath: string, edits: CellEdit[]): Promise<SaveResult>
+  saveTableAs(xlsxPath: string, edits: CellEdit[]): Promise<SaveAsResult>
   check(xlsxPath: string): Promise<CheckResult>
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>

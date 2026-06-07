@@ -25,16 +25,23 @@ describe('资源引用解析（纯）', () => {
     expect(audioRefName('bgm')).toBe('bgm')
     expect(audioRefName('')).toBeNull()
   })
-  it('rpyAudioFilename 补 .mp3（与 rpy 引用一致）', () => {
+  it('rpyAudioFilename 缺省补 .mp3，已有音频扩展名则保留', () => {
     expect(rpyAudioFilename('bgm')).toBe('bgm.mp3')
     expect(rpyAudioFilename('start.mp3')).toBe('start.mp3')
     expect(rpyAudioFilename('se.MP3')).toBe('se.MP3')
+    expect(rpyAudioFilename('se.ogg')).toBe('se.ogg')
   })
   it('resolveImage / resolveAudio 大小写不敏感', () => {
-    const maps: AssetMaps = { images: { 'kyon 0012': 'images/kyon 0012.png' }, audio: { start: 'audio/start.mp3' } }
+    const maps: AssetMaps = {
+      images: { 'kyon 0012': 'images/kyon 0012.png' },
+      audio: { start: 'audio/start.mp3', 'loop.ogg': 'audio/loop.ogg' },
+    }
     expect(resolveImage(maps, 'KYON 0012')).toBe('images/kyon 0012.png')
+    expect(resolveImage(maps, 'KYON 0012.png')).toBe('images/kyon 0012.png')
     expect(resolveImage(maps, 'missing')).toBeNull()
     expect(resolveAudio(maps, 'Start')).toBe('audio/start.mp3')
+    expect(resolveAudio(maps, 'Start.mp3')).toBe('audio/start.mp3')
+    expect(resolveAudio(maps, 'loop.ogg')).toBe('audio/loop.ogg')
   })
 })
 
@@ -53,9 +60,11 @@ describe('scanRenpyAssets', () => {
 
     const idx = await scanRenpyAssets(game)
     expect(idx.images['kyon 0030']).toBe('images/kyon 0030.png')
+    expect(idx.images['kyon 0030.png']).toBe('images/kyon 0030.png')
     expect(idx.images['bg xy005']).toBe('images/bg xy005.jpg')
     expect(idx.audio['start']).toBe('audio/start.mp3')
-    expect(Object.keys(idx.images)).toHaveLength(2)
+    expect(idx.audio['start.mp3']).toBe('audio/start.mp3')
+    expect(Object.keys(idx.images)).toHaveLength(4)
     expect(idx.transforms).toContain('kyon_left')
     expect(idx.transforms).toContain('haruhi_mid')
   })

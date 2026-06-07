@@ -2,7 +2,6 @@
 import { writeFile, mkdir, readFile, readdir, copyFile, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
-  readWorkbook,
   planTtsJobs,
   ttsJobSignature,
   toneFor,
@@ -11,6 +10,10 @@ import {
   type TtsConfig,
   type TtsJob,
   type EnrichedJob,
+  readRawWorkbook,
+  parseSheetRows,
+  truthy,
+  EXCEL_PARSE_START_ROW,
 } from '@e2r/core'
 
 const MANIFEST = '.e2r-tts.json' // pending 目录：记录每个已生成 wav 的合成输入签名
@@ -90,12 +93,10 @@ export async function ttsHealth(
   baseUrl: string,
 ): Promise<{ ok: boolean; device?: string; version?: string; error?: string }> {
   try {
-    const r = await fetch(`${baseUrl}health`)
-    if (r.ok) {
-      const j = (await r.json().catch(() => ({}))) as { device?: string; version?: string }
-      return { ok: true, device: j.device, version: j.version }
-    }
-    // 网关错误（502/503/504）= 上游不可达 → 离线；其余有应答（如 404 无 /health）→ 视为可达
+    const r = await fetch(baseUrl)
+    if (r.ok) return { ok: true }
+    // GSV 远端通常没有 /health；状态检测只验证服务基址可连接。
+    // 网关错误（502/503/504）= 上游不可达 → 离线；其余有应答（如 404/405）→ 视为可达。
     if (r.status >= 502 && r.status <= 504) return { ok: false, error: `HTTP ${r.status}` }
     return { ok: true }
   } catch (e) {
@@ -113,8 +114,16 @@ export async function listSynthesized(audioDir: string): Promise<string[]> {
 }
 
 export async function planJobs(xlsxPath: string): Promise<TtsJob[]> {
-  const { sheets } = await readWorkbook(xlsxPath)
-  return planTtsJobs(sheets)
+  const { sheets: rawSheets } = await readRawWorkbook(xlsxPath)
+  const excelRows = rawSheets.map((sheet) => {
+    const rows: number[] = []
+    sheet.rows.forEach((row, rawIndex) => {
+      if (row.some(truthy)) rows.push(EXCEL_PARSE_START_ROW + 1 + rawIndex)
+    })
+    return rows
+  })
+  const sheets = rawSheets.map((sheet) => ({ name: sheet.name, rows: parseSheetRows(sheet.rows) }))
+  return planTtsJobs(sheets, excelRows)
 }
 
 export interface SynthOptions {

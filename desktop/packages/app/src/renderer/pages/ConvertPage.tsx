@@ -1,88 +1,109 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   FileSpreadsheet,
-  Eye,
   Download,
   FileCode2,
-  Copy,
-  Check,
   TriangleAlert,
   Layers,
+  Upload,
+  CircleCheck,
 } from 'lucide-react'
-import type { ConversionMode } from '@e2r/core'
-import type { ConvertResult, PreviewData, PreviewResult, RpyFile } from '../../shared/ipc'
-import { PathPicker } from '../components/PathPicker'
+import type { RpyFile } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 
-const MODES: { id: ConversionMode; label: string; hint: string }[] = [
-  { id: 'default', label: '默认', hint: '修正 + 告警' },
-  { id: 'legacy-compat', label: '旧版兼容', hint: '逐字符一致' },
-]
+type FileAction = 'export' | 'apply'
+const fileKey = (file: RpyFile, index: number): string => `${index}:${file.label}`
 
 export default function ConvertPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const outputDir = useWorkspaceStore((s) => s.outputDir)
-  const setOutputDir = useWorkspaceStore((s) => s.setOutputDir)
-  const mode = useWorkspaceStore((s) => s.mode)
-  const setMode = useWorkspaceStore((s) => s.setMode)
+  const assets = useWorkspaceStore((s) => s.assets)
+  const storedResult = useWorkspaceStore((s) => s.convertResult)
+  const convertWorkbookPath = useWorkspaceStore((s) => s.convertWorkbookPath)
+  const converting = useWorkspaceStore((s) => s.converting)
+  const convertError = useWorkspaceStore((s) => s.convertError)
+  const runConvert = useWorkspaceStore((s) => s.runConvert)
+  const sheetChanges = useWorkspaceStore((s) => s.sheetChanges)
+  const clearSheetChanges = useWorkspaceStore((s) => s.clearSheetChanges)
 
-  const [preview, setPreview] = useState<PreviewData | null>(null)
-  const [exportedDir, setExportedDir] = useState<string | null>(null)
-  const [activeIndex, setActiveIndex] = useState(0)
-  const [copied, setCopied] = useState(false)
+  const result = storedResult && convertWorkbookPath === workbookPath ? storedResult : null
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState<'preview' | 'convert' | null>(null)
+  const [busy, setBusy] = useState<Record<string, FileAction | undefined>>({})
+  const [done, setDone] = useState<Record<string, string | undefined>>({})
+  const [syncing, setSyncing] = useState(false)
+  const displayError = error ?? convertError
 
-  const apply = (r: PreviewResult | ConvertResult, exported: string | null) => {
-    if (r.ok) {
-      setPreview({
-        sheetNames: r.sheetNames,
-        files: r.files,
-        warnings: r.warnings,
-        readWarningCount: r.readWarningCount,
-      })
-      setActiveIndex(0)
-      setExportedDir(exported)
-      setError(null)
-    } else {
-      setError(r.error)
-    }
-  }
+  const pendingSheetNames = useMemo(
+    () => (sheetChanges.workbookPath === workbookPath ? Object.keys(sheetChanges.sheets) : []),
+    [sheetChanges, workbookPath],
+  )
+  const pendingSheetSet = useMemo(() => new Set(pendingSheetNames), [pendingSheetNames])
 
-  const runPreview = async () => {
-    if (!workbookPath) return
-    setLoading('preview')
+  useEffect(() => {
+    setDone({})
+  }, [result])
+
+  const warningsByFile = useMemo(() => {
+    const out = new Map<number, number>()
+    for (const w of result?.warnings ?? []) out.set(w.sheetIndex, (out.get(w.sheetIndex) ?? 0) + 1)
+    return out
+  }, [result])
+
+  const runFileAction = async (file: RpyFile, index: number, action: FileAction) => {
+    const key = fileKey(file, index)
+    setBusy((prev) => ({ ...prev, [key]: action }))
     setError(null)
     try {
-      apply(await window.e2r.preview({ xlsxPath: workbookPath, mode }), null)
+      const sheetName = result?.sheetNames[index] ?? ''
+      let target = file
+      if (converting && workbookPath) {
+        const latest = await runConvert(workbookPath)
+        if (!latest) return
+        target = latest.files[index] ?? file
+      }
+      const r =
+        action === 'export' ? await window.e2r.exportRpyFile(target) : await window.e2r.applyRpyFile(target)
+      if (r.ok) {
+        setDone((prev) => ({
+          ...prev,
+          [key]: action === 'export' ? `已导出：${r.path}` : `已应用：${r.path}`,
+        }))
+        if (action === 'apply' && sheetName) clearSheetChanges([sheetName], workbookPath)
+      } else if (r.error) {
+        setError(r.error)
+      }
     } finally {
-      setLoading(null)
+      setBusy((prev) => ({ ...prev, [key]: undefined }))
     }
   }
 
-  const runConvert = async () => {
-    if (!workbookPath) return
-    setLoading('convert')
+  const applyChangedSheets = async (sheetNames: string[]) => {
+    if (!assets || !result || sheetNames.length === 0) return
+    setSyncing(true)
     setError(null)
     try {
-      const r = await window.e2r.convert({
-        xlsxPath: workbookPath,
-        outDir: outputDir || null,
-        mode,
-      })
-      apply(r, r.ok ? r.outDir : null)
+      const base = converting && workbookPath ? await runConvert(workbookPath) : result
+      if (!base) return
+      const applied: string[] = []
+      for (const sheetName of sheetNames) {
+        const index = base.sheetNames.indexOf(sheetName)
+        const file = index >= 0 ? base.files[index] : undefined
+        if (!file) {
+          setError(`未找到 sheet "${sheetName}" 对应的脚本`)
+          break
+        }
+        const r = await window.e2r.applyRpyFile(file)
+        if (r.ok) {
+          applied.push(sheetName)
+          setDone((prev) => ({ ...prev, [fileKey(file, index)]: `已应用：${r.path}` }))
+        } else if (r.error) {
+          setError(r.error)
+          break
+        }
+      }
+      if (applied.length > 0) clearSheetChanges(applied, workbookPath)
     } finally {
-      setLoading(null)
+      setSyncing(false)
     }
-  }
-
-  const activeFile: RpyFile | undefined = preview?.files[activeIndex]
-
-  const handleCopy = async () => {
-    if (!activeFile) return
-    await navigator.clipboard.writeText(activeFile.content)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
@@ -90,135 +111,130 @@ export default function ConvertPage() {
       <header className="mb-5">
         <h2 className="text-[20px] font-semibold text-app-text">Excel → Ren&apos;Py 转换</h2>
         <p className="mt-1 text-[13px] text-app-muted">
-          解析剧本表格并生成 Ren&apos;Py 脚本，与旧工具逐字符对齐，可在导出前预览
+          解析剧本表格并生成 Ren&apos;Py 脚本；生成后可按文件单独导出或应用到关联工程
         </p>
       </header>
 
-      {/* 输出目录 + 模式 */}
-      <section className="glass-card mb-4 flex flex-wrap items-center gap-x-5 gap-y-3 p-4">
-        <div className="flex min-w-[280px] flex-1 items-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-app-muted">
-            输出目录
+      <div className="mb-4 flex items-center gap-3 text-[12px] text-app-muted">
+        {displayError ? (
+          <span className="flex items-center gap-1.5 text-rose-500">
+            <TriangleAlert size={13} /> {displayError}
           </span>
-          <div className="min-w-0 flex-1">
-            <PathPicker
-              value={outputDir}
-              onChange={setOutputDir}
-              mode="directory"
-              placeholder="默认：表格所在目录"
-              ariaLabel="输出目录"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-app-muted">模式</span>
-          <div className="inline-flex rounded-[10px] border border-app-border bg-black/5 p-0.5 dark:bg-white/5">
-            {MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setMode(m.id)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                  mode === m.id
-                    ? 'bg-white text-app-text shadow-sm dark:bg-zinc-700'
-                    : 'text-app-muted hover:text-app-text'
-                }`}
-              >
-                {m.label}
-                <span className="text-[10px] text-app-muted">{m.hint}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* 操作条 */}
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-[12px] text-app-muted">
-          {error ? (
-            <span className="flex items-center gap-1.5 text-rose-500">
-              <TriangleAlert size={13} /> {error}
+        ) : converting ? (
+          <span className="flex items-center gap-1.5">
+            <span className="spinner" /> 自动转换中
+          </span>
+        ) : !result ? (
+          <span>{workbookPath ? '正在等待自动转换结果' : '选择工作簿后自动生成脚本列表'}</span>
+        ) : (
+          <>
+            <span className="flex items-center gap-1.5">
+              <Layers size={13} /> {result.sheetNames.length} sheet · {result.files.length} 文件
             </span>
-          ) : !preview ? (
-            <span>尚未生成 · 立绘/背景/音频预览请用「表格」页</span>
-          ) : (
-            <>
-              <span className="flex items-center gap-1.5">
-                <Layers size={13} /> {preview.sheetNames.length} sheet · {preview.files.length} 文件
+            {result.warnings.length > 0 && (
+              <span className="flex items-center gap-1.5 text-amber-500">
+                <TriangleAlert size={13} /> {result.warnings.length} 告警
               </span>
-              {preview.warnings.length > 0 && (
-                <span className="flex items-center gap-1.5 text-amber-500">
-                  <TriangleAlert size={13} /> {preview.warnings.length} 告警
-                </span>
-              )}
-              {exportedDir && <span className="text-emerald-500">已导出 → {exportedDir}</span>}
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={runPreview}
-            disabled={!workbookPath || loading !== null}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3.5 text-[12px] font-medium text-app-text transition-colors hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
-          >
-            {loading === 'preview' ? <span className="spinner" /> : <Eye size={14} />}
-            生成
-          </button>
-          <button
-            type="button"
-            onClick={runConvert}
-            disabled={!workbookPath || loading !== null}
-            className="flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-4 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading === 'convert' ? <span className="spinner" /> : <Download size={14} />}
-            转换并导出
-          </button>
-        </div>
+            )}
+            {result.readWarningCount > 0 && <span>读取告警 {result.readWarningCount}</span>}
+          </>
+        )}
       </div>
 
-      {/* 预览区 */}
-      <section className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden">
-        {preview && preview.files.length > 0 ? (
-          <>
-            <div className="flex items-center gap-1 overflow-x-auto border-b border-app-border bg-black/5 px-2 py-1.5 dark:bg-white/5">
-              {preview.files.map((file, i) => (
-                <button
-                  key={file.label}
-                  type="button"
-                  onClick={() => setActiveIndex(i)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                    i === activeIndex
-                      ? 'bg-white text-app-text shadow-sm dark:bg-zinc-700'
-                      : 'text-app-muted hover:bg-white/50 dark:hover:bg-zinc-700/50'
-                  }`}
-                >
-                  <FileCode2 size={11} />
-                  {file.label}.rpy
-                  <span className="text-app-muted">{(file.bytes / 1024).toFixed(0)}K</span>
-                </button>
-              ))}
-              <div className="flex-1" />
-              {activeFile && (
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-app-muted transition-colors hover:bg-white/50 hover:text-app-text dark:hover:bg-zinc-700/50"
-                >
-                  {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
-                  {copied ? '已复制' : '复制'}
-                </button>
-              )}
+      {pendingSheetNames.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/35 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-200">
+          <TriangleAlert size={14} className="shrink-0" />
+          <span className="min-w-0 flex-1">
+            已保存、脚本列表已自动更新，但尚未应用到工程：{pendingSheetNames.join('、')}
+          </span>
+          <button
+            type="button"
+            onClick={() => void applyChangedSheets(pendingSheetNames)}
+            disabled={!assets || !result || syncing}
+            title={assets ? '覆盖这些 sheet 当前脚本到关联工程' : '需要先关联 Ren’Py 工程'}
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-[12px] font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          >
+            {syncing ? <span className="spinner" /> : <Upload size={13} />}
+            应用全部更改
+          </button>
+        </div>
+      )}
+
+      <section className="glass-card min-h-0 flex-1 overflow-hidden">
+        {result && result.files.length > 0 ? (
+          <div className="custom-scrollbar h-full overflow-auto">
+            <div className="grid grid-cols-[minmax(180px,1fr)_minmax(120px,220px)_90px_100px_220px] gap-3 border-b border-app-border bg-black/5 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-app-muted dark:bg-white/5">
+              <span>脚本</span>
+              <span>来源</span>
+              <span>大小</span>
+              <span>告警</span>
+              <span className="text-right">操作</span>
             </div>
-            <pre className="custom-scrollbar code-block flex-1 overflow-auto p-4 text-app-text">
-              {activeFile?.content}
-            </pre>
-          </>
+            {result.files.map((file, i) => {
+              const key = fileKey(file, i)
+              const fileBusy = busy[key]
+              const warnCount = warningsByFile.get(i) ?? 0
+              const sourceSheet = result.sheetNames[i] ?? ''
+              const sheetChanged = pendingSheetSet.has(sourceSheet)
+              return (
+                <div
+                  key={key}
+                  className="grid grid-cols-[minmax(180px,1fr)_minmax(120px,220px)_90px_100px_220px] items-center gap-3 border-b border-app-border/70 px-4 py-3 last:border-b-0"
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-app-text">
+                      <FileCode2 size={14} className="shrink-0 text-app-muted" />
+                      <span className="truncate font-mono">{file.label}.rpy</span>
+                    </div>
+                    {done[key] && (
+                      <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-300">
+                        <CircleCheck size={12} className="shrink-0" />
+                        <span className="truncate">{done[key]}</span>
+                      </div>
+                    )}
+                    {sheetChanged && (
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-500">
+                        <TriangleAlert size={12} className="shrink-0" />
+                        <span>脚本已自动更新，尚未应用到工程</span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="truncate text-[12px] text-app-muted">{sourceSheet || '-'}</span>
+                  <span className="font-mono text-[12px] text-app-muted">{(file.bytes / 1024).toFixed(1)}K</span>
+                  <span className={warnCount ? 'text-[12px] text-amber-500' : 'text-[12px] text-app-muted'}>
+                    {warnCount || '-'}
+                  </span>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void runFileAction(file, i, 'export')}
+                      disabled={!!fileBusy}
+                      className="flex h-8 items-center gap-1.5 rounded-lg border border-app-border bg-white/45 px-3 text-[12px] font-medium text-app-text transition-colors hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+                    >
+                      {fileBusy === 'export' ? <span className="spinner" /> : <Download size={13} />}
+                      导出
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runFileAction(file, i, 'apply')}
+                      disabled={!assets || !!fileBusy}
+                      title={assets ? '覆盖到关联工程 game/ 中的同名脚本' : '需要先关联 Ren’Py 工程'}
+                      className="flex h-8 items-center gap-1.5 rounded-lg bg-sky-500 px-3 text-[12px] font-medium text-white transition-colors hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {fileBusy === 'apply' ? <span className="spinner" /> : <Upload size={13} />}
+                      应用到工程
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-app-muted">
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-app-muted">
             <FileSpreadsheet size={36} strokeWidth={1.2} />
-            <p className="text-[13px]">点击「生成」查看转换结果（.rpy）</p>
+            <p className="text-[13px]">
+              {converting ? '正在自动转换…' : '选择工作簿后自动生成脚本列表'}
+            </p>
           </div>
         )}
       </section>

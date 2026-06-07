@@ -1,22 +1,35 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { ConversionMode } from '@e2r/core'
-import type { AssetIndex, SpritePositions } from '../../shared/ipc'
+import type { AssetIndex, PreviewData } from '../../shared/ipc'
+
+let convertSeq = 0
+const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+interface SheetChangeState {
+  workbookPath: string
+  sheets: Record<string, number>
+}
 
 interface WorkspaceState {
   workbookPath: string // 当前活动工作簿 = workspace 里的副本（原表只作为导入种子，永不被改）
   workspaceDir: string // 当前表格的 workspace 文件夹（副本所在目录）
   outputDir: string
-  mode: ConversionMode
+  convertResult: PreviewData | null
+  convertWorkbookPath: string
+  converting: boolean
+  convertError: string | null
+  sheetChanges: SheetChangeState // 已保存到表格、但尚未应用到关联工程的 sheet
   assets: AssetIndex | null // 关联的 Ren'Py 工程资源索引（不持久化，启动时按 renpyDir 重扫）
   renpyDir: string // 关联工程时用户选择的目录（持久化，用于重开时重新关联）
   currentProjectPath: string | null // 当前 .e2rproj 工程文件
-  spritePositions: SpritePositions // 每角色 左/中/右 自定义位置 token
   setWorkbookPath: (p: string) => void
   importWorkbook: (originalPath: string) => Promise<void> // 导入原表 → 建副本 → 切到副本
   setOutputDir: (p: string) => void
-  setMode: (m: ConversionMode) => void
-  setSpritePositions: (s: SpritePositions) => void
+  setConvertResult: (result: PreviewData, workbookPath: string) => void
+  clearConvertResult: () => void
+  runConvert: (workbookPath?: string) => Promise<PreviewData | null>
+  markSheetChanges: (sheetNames: string[], workbookPath?: string) => void
+  clearSheetChanges: (sheetNames?: string[], workbookPath?: string) => void
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
   setAssets: (a: AssetIndex) => void
   clearProject: () => void
@@ -30,24 +43,133 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       workbookPath: '',
       workspaceDir: '',
       outputDir: '',
-      mode: 'default',
+      convertResult: null,
+      convertWorkbookPath: '',
+      converting: false,
+      convertError: null,
+      sheetChanges: { workbookPath: '', sheets: {} },
       assets: null,
       renpyDir: '',
       currentProjectPath: null,
-      spritePositions: {},
-      setWorkbookPath: (workbookPath) => set({ workbookPath }),
+      setWorkbookPath: (workbookPath) => {
+        set({
+          workbookPath,
+          convertResult: null,
+          convertWorkbookPath: '',
+          convertError: null,
+          sheetChanges: { workbookPath, sheets: {} },
+        })
+        if (workbookPath) void get().runConvert(workbookPath)
+      },
       importWorkbook: async (originalPath) => {
         if (!originalPath) {
-          set({ workbookPath: '', workspaceDir: '' })
+          set({
+            workbookPath: '',
+            workspaceDir: '',
+            convertResult: null,
+            convertWorkbookPath: '',
+            converting: false,
+            convertError: null,
+            sheetChanges: { workbookPath: '', sheets: {} },
+          })
           return
         }
         const r = await window.e2r.workspaceImport(originalPath)
-        if (r.ok) set({ workbookPath: r.copyPath, workspaceDir: r.dir })
-        else set({ workbookPath: originalPath }) // 兜底：导入失败仍可用原表
+        if (r.ok) {
+          set({
+            workbookPath: r.copyPath,
+            workspaceDir: r.dir,
+            convertResult: null,
+            convertWorkbookPath: '',
+            convertError: null,
+            sheetChanges: { workbookPath: r.copyPath, sheets: {} },
+          })
+          void get().runConvert(r.copyPath)
+        } else {
+          // 兜底：导入失败仍可用原表
+          set({
+            workbookPath: originalPath,
+            convertResult: null,
+            convertWorkbookPath: '',
+            convertError: null,
+            sheetChanges: { workbookPath: originalPath, sheets: {} },
+          })
+          void get().runConvert(originalPath)
+        }
       },
       setOutputDir: (outputDir) => set({ outputDir }),
-      setMode: (mode) => set({ mode }),
-      setSpritePositions: (spritePositions) => set({ spritePositions }),
+      setConvertResult: (convertResult, convertWorkbookPath) =>
+        set({ convertResult, convertWorkbookPath, convertError: null }),
+      clearConvertResult: () =>
+        set({ convertResult: null, convertWorkbookPath: '', convertError: null }),
+      runConvert: async (workbookPath) => {
+        const s = get()
+        const targetWorkbook = workbookPath ?? s.workbookPath
+        if (!targetWorkbook) return null
+        const seq = ++convertSeq
+        set({ converting: true, convertError: null })
+        try {
+          const r = await window.e2r.convert({ xlsxPath: targetWorkbook })
+          if (seq !== convertSeq) return null
+          const current = get()
+          if (current.workbookPath !== targetWorkbook) return null
+          if (!r.ok) {
+            set({
+              convertResult: null,
+              convertWorkbookPath: '',
+              convertError: r.error,
+            })
+            return null
+          }
+          const next = {
+            sheetNames: r.sheetNames,
+            files: r.files,
+            warnings: r.warnings,
+            readWarningCount: r.readWarningCount,
+          }
+          set({
+            convertResult: next,
+            convertWorkbookPath: targetWorkbook,
+            convertError: null,
+          })
+          return next
+        } catch (e) {
+          if (seq === convertSeq) {
+            set({
+              convertResult: null,
+              convertWorkbookPath: '',
+              convertError: errMsg(e),
+            })
+          }
+          return null
+        } finally {
+          if (seq === convertSeq) set({ converting: false })
+        }
+      },
+      markSheetChanges: (sheetNames, workbookPath) => {
+        const before = get()
+        const targetWorkbook = workbookPath ?? before.workbookPath
+        set((state) => {
+          const base =
+            state.sheetChanges.workbookPath === targetWorkbook ? state.sheetChanges.sheets : {}
+          const next = { ...base }
+          const now = Date.now()
+          for (const name of sheetNames) if (name) next[name] = now
+          return { sheetChanges: { workbookPath: targetWorkbook, sheets: next } }
+        })
+        if (targetWorkbook && targetWorkbook === get().workbookPath) void get().runConvert(targetWorkbook)
+      },
+      clearSheetChanges: (sheetNames, workbookPath) =>
+        set((state) => {
+          const targetWorkbook = workbookPath ?? state.workbookPath
+          if (state.sheetChanges.workbookPath !== targetWorkbook) {
+            return { sheetChanges: { workbookPath: targetWorkbook, sheets: {} } }
+          }
+          if (!sheetNames) return { sheetChanges: { workbookPath: targetWorkbook, sheets: {} } }
+          const next = { ...state.sheetChanges.sheets }
+          for (const name of sheetNames) delete next[name]
+          return { sheetChanges: { workbookPath: targetWorkbook, sheets: next } }
+        }),
       linkProject: async (dir) => {
         const r = await window.e2r.linkProject(dir)
         if (r.ok) {
@@ -70,12 +192,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         set({
           workbookPath: m.workbook,
           workspaceDir: m.workbook.replace(/[\\/][^\\/]*$/, ''), // 副本所在目录
-          mode: m.mode,
-          spritePositions: m.spritePositions ?? {},
+          convertResult: null,
+          convertWorkbookPath: '',
+          convertError: null,
+          sheetChanges: { workbookPath: m.workbook, sheets: {} },
           currentProjectPath: path,
           assets: null,
           renpyDir: '',
         })
+        void get().runConvert(m.workbook)
         if (m.renpyProject) await get().linkProject(m.renpyProject)
       },
       saveProjectFile: async (saveAs) => {
@@ -90,8 +215,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           version: 1 as const,
           workbook: s.workbookPath,
           ...(s.renpyDir ? { renpyProject: s.renpyDir } : {}),
-          ...(Object.keys(s.spritePositions).length ? { spritePositions: s.spritePositions } : {}),
-          mode: s.mode,
         }
         const r = await window.e2r.writeProject(path, manifest)
         if (r.ok) set({ currentProjectPath: path })
@@ -104,10 +227,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         workbookPath: s.workbookPath,
         workspaceDir: s.workspaceDir,
         outputDir: s.outputDir,
-        mode: s.mode,
         renpyDir: s.renpyDir,
         currentProjectPath: s.currentProjectPath,
-        spritePositions: s.spritePositions,
       }),
     },
   ),

@@ -13,11 +13,14 @@ import type {
   E2rApi,
   PreviewArgs,
   PreviewResult,
+  RpyFile,
+  RpyFileWriteResult,
   ProjectManifest,
   ProjectReadResult,
   ProjectResult,
   AssetImportResult,
   WsAssetType,
+  SaveAsResult,
   SaveResult,
   TableResult,
   TtsConfig,
@@ -50,11 +53,15 @@ const api: E2rApi = {
     ipcRenderer.invoke('project:write', path, manifest),
   preview: (args: PreviewArgs): Promise<PreviewResult> => ipcRenderer.invoke('preview', args),
   convert: (args: ConvertArgs): Promise<ConvertResult> => ipcRenderer.invoke('convert', args),
+  exportRpyFile: (file: RpyFile): Promise<RpyFileWriteResult> => ipcRenderer.invoke('rpy:export', file),
+  applyRpyFile: (file: RpyFile): Promise<RpyFileWriteResult> => ipcRenderer.invoke('rpy:apply', file),
   validateFormat: (xlsxPath: string): Promise<FormatResult> =>
     ipcRenderer.invoke('format:validate', xlsxPath),
   readTable: (xlsxPath: string): Promise<TableResult> => ipcRenderer.invoke('table:read', xlsxPath),
   saveTable: (xlsxPath: string, edits: CellEdit[]): Promise<SaveResult> =>
     ipcRenderer.invoke('table:save', xlsxPath, edits),
+  saveTableAs: (xlsxPath: string, edits: CellEdit[]): Promise<SaveAsResult> =>
+    ipcRenderer.invoke('table:saveAs', xlsxPath, edits),
   check: (xlsxPath: string): Promise<CheckResult> => ipcRenderer.invoke('check', xlsxPath),
   diff: (oldPath: string, newPath: string): Promise<DiffResult> =>
     ipcRenderer.invoke('diff', oldPath, newPath),

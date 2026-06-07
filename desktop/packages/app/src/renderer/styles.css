@@ -157,3 +157,13 @@ body {
 .ag-cell-focus .e2r-combo-caret {
   opacity: 1;
 }
+
+/* ---------- 表格资源动作：导入 / 替换 / 播放只在悬浮或选中单元格时显示 ---------- */
+.e2r-asset-action {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ag-cell:hover .e2r-asset-action,
+.ag-cell-focus .e2r-asset-action {
+  opacity: 1;
+}

@@ -25,6 +25,7 @@ export function App(): JSX.Element {
     void loadCharacters()
     if (window.e2r.demoFile) void importWorkbook(window.e2r.demoFile)
     const st = useWorkspaceStore.getState()
+    if (!window.e2r.demoFile && st.workbookPath) void st.runConvert(st.workbookPath)
     const dir = window.e2r.demoProject ?? (window.e2r.demoUnlink ? '' : st.renpyDir)
     if (dir && !st.assets) void linkProject(dir)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,7 +61,7 @@ export function App(): JSX.Element {
               >
                 <div
                   className={`mx-auto h-full px-8 pb-7 pt-6 ${
-                    page === 'table' ? 'max-w-none' : 'max-w-5xl'
+                    page === 'table' || page === 'tts' ? 'max-w-none' : 'max-w-5xl'
                   }`}
                 >
                   {page === 'convert' && <ConvertPage />}

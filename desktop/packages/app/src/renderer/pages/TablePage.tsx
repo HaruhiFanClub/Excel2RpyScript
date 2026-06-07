@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import {
-  AllCommunityModule,
-  ModuleRegistry,
-  themeQuartz,
   type CellValueChangedEvent,
   type ColDef,
   type GridApi,
   type GridReadyEvent,
 } from 'ag-grid-community'
-import { FileSpreadsheet, TableProperties, Save, RotateCcw, X, MoveHorizontal } from 'lucide-react'
+import { Download, FileSpreadsheet, Save, RotateCcw, X } from 'lucide-react'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
+import { spritePositionsFromConfig } from '@e2r/core/tts'
 import type { CellEdit } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { useCharactersStore } from '../stores/useCharactersStore'
@@ -22,29 +20,7 @@ import {
   ComboCell,
   type GridContext,
 } from '../components/cellRenderers'
-import { SpritePositionsModal } from '../components/SpritePositionsModal'
-
-ModuleRegistry.registerModules([AllCommunityModule])
-
-const gridTheme = themeQuartz.withParams({
-  accentColor: '#0ea5e9',
-  backgroundColor: 'transparent',
-  foregroundColor: 'var(--app-text)',
-  borderColor: 'var(--app-border)',
-  headerBackgroundColor: 'color-mix(in srgb, var(--app-text) 4%, transparent)',
-  headerTextColor: 'var(--app-muted)',
-  oddRowBackgroundColor: 'color-mix(in srgb, var(--app-text) 2.5%, transparent)',
-  rowHoverColor: 'color-mix(in srgb, #0ea5e9 11%, transparent)',
-  selectedRowBackgroundColor: 'color-mix(in srgb, #0ea5e9 16%, transparent)',
-  fontFamily: 'inherit',
-  fontSize: 12.5,
-  headerFontWeight: 600,
-  headerHeight: 36,
-  rowHeight: 34,
-  cellHorizontalPadding: 10,
-  wrapperBorderRadius: 0,
-  borderRadius: 5,
-})
+import { SheetTabs, appGridTheme, defaultGridColDef } from '../components/dataGrid'
 
 type Row = Record<string, string | number>
 const LARGE_TEXT = new Set(['text', 'voice_text', 'remark'])
@@ -65,16 +41,21 @@ export default function TablePage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const assets = useWorkspaceStore((s) => s.assets)
   const setAssets = useWorkspaceStore((s) => s.setAssets)
+  const markSheetChanges = useWorkspaceStore((s) => s.markSheetChanges)
   const ttsConfig = useCharactersStore((s) => s.config)
-  const spritePositions = useWorkspaceStore((s) => s.spritePositions)
-  const setSpritePositions = useWorkspaceStore((s) => s.setSpritePositions)
-  const [posOpen, setPosOpen] = useState(false)
+  // 立绘位置来自「角色配置」：自建角色留空用 left/mid/right，内置凉宫角色已带前缀配置。
+  const spritePositions = useMemo(
+    () => (ttsConfig ? spritePositionsFromConfig(ttsConfig) : {}),
+    [ttsConfig],
+  )
 
   const [data, setData] = useState<TableData | null>(null)
   const [active, setActive] = useState(0)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [query, setQuery] = useState('')
 
@@ -123,14 +104,17 @@ export default function TablePage() {
       ttsConfig,
       onImage: (url, title) => setImg({ url, title }),
       onAudio: (url, title) => setAudio({ url, title }),
-      onImport: (kind, name) => {
-        if (!workbookPath) return
-        void window.e2r.importAsset(kind, name, workbookPath).then((r) => {
-          if (r.ok && r.index) {
-            setAssets(r.index) // 关联工程：用回扫的索引刷新缩略图
-            gridApi.current?.refreshCells({ force: true })
-          }
-        })
+      onImport: async (kind, currentValue) => {
+        if (!workbookPath || !assets) return null
+        const r = await window.e2r.importAsset(kind, currentValue, workbookPath)
+        if (r.ok) {
+          setAssets(r.index)
+          gridApi.current?.refreshCells({ force: true })
+          setError(null)
+          return r.value
+        }
+        if (r.error) setError(r.error)
+        return null
       },
     }),
     [assets, ttsConfig, setAssets, workbookPath],
@@ -153,7 +137,7 @@ export default function TablePage() {
           })
         }
       } else if (c.key === 'role_name') {
-        // 角色列：双击单元格可自由输入；选中/悬浮出现下拉按钮（已启用角色含别名，或下拉里输入自定义值）。
+        // 角色列：双击单元格可自由输入；选中/悬浮出现下拉按钮（已启用角色主名称，或下拉里输入自定义值）。
         // 双击「下拉按钮」由 ComboCell 用原生监听拦下，不会误触发编辑。
         defs.push({
           headerName: c.header,
@@ -164,12 +148,12 @@ export default function TablePage() {
           cellRenderer: ComboCell,
         })
       } else if (c.key === 'voice_cmd') {
-        // 语音指令列：双击单元格可自由输入；下拉仅显示该行角色对应的语气（或下拉里输入自定义值）
+        // 语音指令列：只能从下拉选择该行角色对应的语气。
         defs.push({
           headerName: c.header,
           field: c.key,
           width: c.width,
-          editable: true,
+          editable: false,
           cellRenderer: ComboCell,
         })
       } else {
@@ -186,7 +170,7 @@ export default function TablePage() {
     return defs
   }, [])
 
-  const defaultColDef = useMemo<ColDef<Row>>(() => ({ resizable: true, sortable: true }), [])
+  const defaultColDef = useMemo<ColDef<Row>>(() => defaultGridColDef, [])
   const rowData = useMemo<Row[]>(
     () =>
       sheet?.rows.map((r) => {
@@ -202,21 +186,6 @@ export default function TablePage() {
       }) ?? [],
     [sheet, spritePositions],
   )
-
-  // 当前表中出现的立绘角色（用于位置编辑器）
-  const spriteChars = useMemo(() => {
-    const set = new Set<string>()
-    for (const sh of data?.sheets ?? []) {
-      for (const r of sh.rows) {
-        for (const seg of (r.cells['character'] ?? '').split(';')) {
-          const t = seg.trim().split(/\s+/).filter(Boolean)
-          if (t.length >= 2 && t[0]) set.add(t[0])
-        }
-      }
-    }
-    for (const c of Object.keys(spritePositions)) set.add(c)
-    return [...set].sort()
-  }, [data, spritePositions])
 
   const onGridReady = useCallback((e: GridReadyEvent<Row>) => {
     gridApi.current = e.api
@@ -252,30 +221,64 @@ export default function TablePage() {
           value: e.newValue == null ? '' : String(e.newValue),
         })
       }
+      setStatus(null)
       setDirty(edits.current.size)
     },
     [sheet, spritePositions],
   )
 
+  const editedSheetNames = useCallback(
+    () => [...new Set([...edits.current.values()].map((e) => e.sheet).filter(Boolean))],
+    [],
+  )
+
   const save = useCallback(async () => {
     if (!workbookPath || edits.current.size === 0) return
+    const changedSheets = editedSheetNames()
     setSaving(true)
     setError(null)
+    setStatus(null)
     try {
       const r = await window.e2r.saveTable(workbookPath, [...edits.current.values()])
       if (r.ok) {
         edits.current.clear()
         setDirty(0)
+        markSheetChanges(changedSheets, workbookPath)
+        setStatus('已保存，脚本列表会自动更新，并在转换页提示未应用到工程的 sheet 更改')
         setReloadKey((k) => k + 1)
       } else setError(r.error)
     } finally {
       setSaving(false)
     }
-  }, [workbookPath])
+  }, [editedSheetNames, markSheetChanges, workbookPath])
+
+  const saveAs = useCallback(async () => {
+    if (!workbookPath) return
+    const pendingEdits = [...edits.current.values()]
+    const changedSheets = editedSheetNames()
+    setExporting(true)
+    setError(null)
+    setStatus(null)
+    try {
+      const r = await window.e2r.saveTableAs(workbookPath, pendingEdits)
+      if (r.ok) {
+        edits.current.clear()
+        setDirty(0)
+        if (changedSheets.length > 0) markSheetChanges(changedSheets, workbookPath)
+        setStatus(`已另存为：${r.path}`)
+        if (pendingEdits.length > 0) setReloadKey((k) => k + 1)
+      } else if (r.error) {
+        setError(r.error)
+      }
+    } finally {
+      setExporting(false)
+    }
+  }, [editedSheetNames, markSheetChanges, workbookPath])
 
   const discard = useCallback(() => {
     edits.current.clear()
     setDirty(0)
+    setStatus(null)
     setReloadKey((k) => k + 1)
   }, [])
 
@@ -289,13 +292,8 @@ export default function TablePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setPosOpen(true)}
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3 text-[12px] font-medium text-app-text transition-colors hover:bg-white/80 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
-          >
-            <MoveHorizontal size={14} /> 立绘位置
-          </button>
+          {error && <span className="max-w-[360px] truncate text-[12px] text-rose-500">{error}</span>}
+          {status && <span className="max-w-[360px] truncate text-[12px] text-emerald-600 dark:text-emerald-300">{status}</span>}
           {dirty > 0 && (
             <>
               <span className="text-[12px] text-amber-500">{dirty} 处未保存</span>
@@ -311,46 +309,43 @@ export default function TablePage() {
           <button
             type="button"
             onClick={save}
-            disabled={dirty === 0 || saving}
+            disabled={dirty === 0 || saving || exporting}
             className="flex h-9 items-center gap-1.5 rounded-lg bg-sky-500 px-4 text-[12px] font-medium text-white shadow-sm shadow-sky-500/25 transition-all hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <span className="spinner" /> : <Save size={14} />} 保存
+          </button>
+          <button
+            type="button"
+            onClick={saveAs}
+            disabled={!workbookPath || saving || exporting}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-app-border bg-white/50 px-3 text-[12px] font-medium text-app-text transition-colors hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800/40 dark:hover:bg-zinc-700/60"
+          >
+            {exporting ? <span className="spinner" /> : <Download size={14} />} 表格另存为
           </button>
         </div>
       </header>
 
       {data && data.sheets.length > 0 && (
-        <div className="mb-3 flex items-center gap-1 overflow-x-auto">
-          <input
-            className="glass-input mr-2 w-48 shrink-0 text-[12px]"
-            placeholder="搜索本表…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {data.sheets.map((s, i) => (
-            <button
-              key={s.name}
-              type="button"
-              onClick={() => setActive(i)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                i === active
-                  ? 'bg-sky-400/15 text-sky-700 dark:text-sky-200'
-                  : 'text-app-muted hover:bg-black/5 dark:hover:bg-white/5'
-              }`}
-            >
-              <TableProperties size={13} />
-              {s.name}
-              <span className="text-app-muted">{s.rows.length}</span>
-            </button>
-          ))}
-        </div>
+        <SheetTabs
+          tabs={data.sheets.map((s, i) => ({ key: String(i), label: s.name, count: s.rows.length }))}
+          activeKey={String(active)}
+          onChange={(key) => setActive(Number(key))}
+          leading={
+            <input
+              className="glass-input mr-2 w-48 shrink-0 text-[12px]"
+              placeholder="搜索本表…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          }
+        />
       )}
 
       <section className="glass-card relative min-h-0 flex-1 overflow-hidden">
         {sheet && sheet.rows.length > 0 ? (
           <div className="h-full w-full">
             <AgGridReact<Row>
-              theme={gridTheme}
+              theme={appGridTheme}
               context={context}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
@@ -402,15 +397,6 @@ export default function TablePage() {
           </button>
         </div>
       )}
-
-      <SpritePositionsModal
-        open={posOpen}
-        onClose={() => setPosOpen(false)}
-        chars={spriteChars}
-        transforms={assets?.transforms ?? []}
-        value={spritePositions}
-        onChange={setSpritePositions}
-      />
     </div>
   )
 }

@@ -3,6 +3,8 @@ import { Link2, Link2Off, TriangleAlert } from 'lucide-react'
 import { PathPicker } from './PathPicker'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 
+const assetCount = (map: Record<string, string>): number => new Set(Object.values(map)).size
+
 // 共享工作区栏：一处选工作簿 + 关联工程，三页共用，避免重复
 export function WorkspaceBar() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
@@ -16,7 +18,7 @@ export function WorkspaceBar() {
     if (dir) await linkProject(dir)
   }, [linkProject])
 
-  const count = assets ? Object.keys(assets.images).length + Object.keys(assets.audio).length : 0
+  const count = assets ? assetCount(assets.images) + assetCount(assets.audio) : 0
 
   // 导入即校验格式，非法直接提示
   const [problems, setProblems] = useState<string[]>([])

@@ -34,12 +34,15 @@ export async function scanRenpyAssets(gamePath: string): Promise<AssetIndex> {
         await walk(full)
       } else {
         const ext = extname(e.name).toLowerCase()
-        const key = basename(e.name, extname(e.name)).toLowerCase()
+        const stemKey = basename(e.name, extname(e.name)).toLowerCase()
+        const fileKey = e.name.toLowerCase()
         const rel = relative(gamePath, full).split(sep).join('/')
         if (IMG.has(ext)) {
-          if (!(key in images)) images[key] = rel
+          if (!(stemKey in images)) images[stemKey] = rel
+          if (!(fileKey in images)) images[fileKey] = rel
         } else if (AUD.has(ext)) {
-          if (!(key in audio)) audio[key] = rel
+          if (!(stemKey in audio)) audio[stemKey] = rel
+          if (!(fileKey in audio)) audio[fileKey] = rel
         } else if (ext === '.rpy') {
           rpyFiles.push(full)
         }

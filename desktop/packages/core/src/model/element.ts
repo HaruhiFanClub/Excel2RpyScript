@@ -1,6 +1,7 @@
 // RPY 基本元素 + render()（移植自 model/element.py）。render() 输出必须逐字符对齐。
 import { RenderException } from '../errors'
 import type { CellValue } from '../parse/cellValue'
+import { rpyAudioFilename } from '../assets'
 
 // 角色：define {pronoun} = Character('{name}', color="{color}", image="{pronoun}")
 export class Role {
@@ -65,7 +66,7 @@ export class Transition {
   }
 }
 
-// 音频：构造时补 .mp3、加 audio/ 前缀；数字单元格名按 str(int()) 处理（"12"，非 "12.0"）。
+// 音频：构造时补缺省 .mp3、加 audio/ 前缀；已有音频扩展名则保留。数字单元格名按 str(int()) 处理（"12"，非 "12.0"）。
 export class Audio {
   name: string
   fadeout = 0.5
@@ -85,10 +86,7 @@ export class Audio {
     } else {
       n = ''
     }
-    const parts = n.split('.')
-    if ((parts[parts.length - 1] ?? '').toLowerCase() !== 'mp3') {
-      n += '.mp3'
-    }
+    n = rpyAudioFilename(n)
     this.name = 'audio/' + n
   }
 

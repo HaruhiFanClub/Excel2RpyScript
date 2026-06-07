@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AgGridReact } from 'ag-grid-react'
+import type { CustomCellRendererProps } from 'ag-grid-react'
+import { type CellValueChangedEvent, type ColDef } from 'ag-grid-community'
 import {
   AudioLines,
   Play,
@@ -16,6 +19,8 @@ import { isRoleEnabled, isRemoteRole } from '@e2r/core/tts'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { useCharactersStore } from '../stores/useCharactersStore'
 import { assetUrl } from '../lib/asset'
+import { ComboCell, type GridContext } from '../components/cellRenderers'
+import { SheetTabs, appGridTheme, defaultGridColDef } from '../components/dataGrid'
 
 const LANGS: [string, string][] = [
   ['多语种混合', 'auto'],
@@ -29,9 +34,28 @@ const LANGS: [string, string][] = [
 ]
 
 type RunState = 'running' | 'done' | 'error'
+type TtsRow = {
+  line: number
+  role_name: string
+  voice_cmd: string
+  dialogue_text: string
+  voice_text: string
+  status: EnrichedJob['status']
+  outputName: string
+  run?: RunState
+  busy: boolean
+  __job: EnrichedJob
+}
+
+interface TtsGridContext extends GridContext {
+  onAudition: (job: EnrichedJob) => void
+  onApplyJob: (job: EnrichedJob) => void
+  onSynthJob: (job: EnrichedJob) => void
+}
 
 export default function TtsPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
+  const markSheetChanges = useWorkspaceStore((s) => s.markSheetChanges)
   const config = useCharactersStore((s) => s.config)
 
   const [health, setHealth] = useState<{ ok: boolean; device?: string; error?: string } | null>(null)
@@ -45,6 +69,7 @@ export default function TtsPage() {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<Record<string, RunState>>({})
   const [audio, setAudio] = useState<{ url: string; title: string } | null>(null)
+  const [activeSheetKey, setActiveSheetKey] = useState('')
 
   // 启用角色分类：远端（自带模型/端点）/ 内嵌（本地引擎 zero-shot）
   const roleEntries = config ? Object.entries(config.roleModelMapping) : []
@@ -130,10 +155,10 @@ export default function TtsPage() {
     [workbookPath, refresh],
   )
 
-  const audition = (job: EnrichedJob) => {
+  const audition = useCallback((job: EnrichedJob) => {
     // 试听不依赖关联工程：音频由 asset:// 从 pending(已生成)/voice(已应用) 解析
     setAudio({ url: assetUrl(`audio/${job.outputName}`), title: job.outputName })
-  }
+  }, [])
 
   // 可应用（有 pending 文件可落实）= 已生成 / 未重新生成
   const appliable = jobs.filter((j) => j.status === 'generated' || j.status === 'stale')
@@ -143,8 +168,147 @@ export default function TtsPage() {
     {} as Record<string, number>,
   )
 
+  const jobSheets = useMemo(() => {
+    const byKey = new Map<string, { key: string; name: string; sheetIndex: number; jobs: EnrichedJob[] }>()
+    for (const job of jobs) {
+      const key = `${job.sheetIndex}:${job.sheetName}`
+      const group = byKey.get(key)
+      if (group) group.jobs.push(job)
+      else byKey.set(key, { key, name: job.sheetName, sheetIndex: job.sheetIndex, jobs: [job] })
+    }
+    return [...byKey.values()].sort((a, b) => a.sheetIndex - b.sheetIndex)
+  }, [jobs])
+
+  useEffect(() => {
+    if (jobSheets.length === 0) {
+      setActiveSheetKey('')
+      return
+    }
+    if (!jobSheets.some((s) => s.key === activeSheetKey)) setActiveSheetKey(jobSheets[0]!.key)
+  }, [activeSheetKey, jobSheets])
+
+  const activeSheet = jobSheets.find((s) => s.key === activeSheetKey) ?? jobSheets[0]
+  const activeJobs = activeSheet?.jobs ?? []
+
+  const context = useMemo<TtsGridContext>(
+    () => ({
+      assets: null,
+      ttsConfig: config,
+      onImage: () => undefined,
+      onAudio: () => undefined,
+      onImport: async () => null,
+      onAudition: audition,
+      onApplyJob: (job) => void apply([job.outputName]),
+      onSynthJob: (job) => void synth([job.outputName]),
+    }),
+    [config, audition, apply, synth],
+  )
+
+  const columnDefs = useMemo<ColDef<TtsRow>[]>(
+    () => [
+      {
+        headerName: '行',
+        field: 'line',
+        width: 68,
+        minWidth: 58,
+        pinned: 'left',
+        editable: false,
+        cellClass: 'font-mono text-app-muted',
+      },
+      {
+        headerName: '角色',
+        field: 'role_name',
+        width: 118,
+        minWidth: 90,
+        pinned: 'left',
+        editable: false,
+      },
+      {
+        headerName: '语气',
+        field: 'voice_cmd',
+        width: 220,
+        minWidth: 150,
+        editable: false,
+        cellRenderer: ComboCell,
+      },
+      {
+        headerName: '台词',
+        field: 'dialogue_text',
+        width: 360,
+        minWidth: 220,
+        flex: 1.15,
+        editable: false,
+        tooltipField: 'dialogue_text',
+      },
+      {
+        headerName: '语音文本',
+        field: 'voice_text',
+        width: 320,
+        minWidth: 220,
+        flex: 1,
+        editable: false,
+        tooltipField: 'voice_text',
+      },
+      {
+        headerName: '状态',
+        field: 'status',
+        width: 128,
+        minWidth: 112,
+        editable: false,
+        cellRenderer: StatusCell,
+      },
+      {
+        headerName: '',
+        field: 'outputName',
+        width: 118,
+        minWidth: 104,
+        editable: false,
+        sortable: false,
+        cellRenderer: ActionsCell,
+      },
+    ],
+    [],
+  )
+  const defaultColDef = useMemo<ColDef<TtsRow>>(() => defaultGridColDef, [])
+  const rowData = useMemo<TtsRow[]>(
+    () =>
+      activeJobs.map((job) => ({
+        line: job.excelRow,
+        role_name: job.roleName,
+        voice_cmd: job.voiceCmd,
+        dialogue_text: job.dialogueText,
+        voice_text: job.voiceText,
+        status: job.status,
+        outputName: job.outputName,
+        run: progress[job.outputName],
+        busy,
+        __job: job,
+      })),
+    [activeJobs, busy, progress],
+  )
+
+  const onCellValueChanged = useCallback(
+    async (e: CellValueChangedEvent<TtsRow>) => {
+      if (!workbookPath || e.colDef.field !== 'voice_cmd') return
+      const job = e.data.__job
+      const value = String(e.newValue ?? '').trim()
+      if (value === job.voiceCmd) return
+      const r = await window.e2r.saveTable(workbookPath, [
+        { sheet: job.sheetName, excelRow: job.excelRow, col: 'voice_cmd', value },
+      ])
+      if (r.ok) {
+        setError(null)
+        markSheetChanges([job.sheetName], workbookPath)
+        await refresh()
+      } else {
+        setError(r.error)
+      }
+    },
+    [markSheetChanges, workbookPath, refresh],
+  )
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col">
       <header className="mb-4 flex items-end justify-between gap-4">
         <div>
           <h2 className="text-[20px] font-semibold text-app-text">语音合成</h2>
@@ -228,6 +392,14 @@ export default function TtsPage() {
         </div>
       )}
 
+      {jobSheets.length > 0 && (
+        <SheetTabs
+          tabs={jobSheets.map((s) => ({ key: s.key, label: s.name, count: s.jobs.length }))}
+          activeKey={activeSheet?.key ?? ''}
+          onChange={setActiveSheetKey}
+        />
+      )}
+
       <section className="glass-card custom-scrollbar min-h-0 flex-1 overflow-auto">
         {jobs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-app-muted">
@@ -237,70 +409,18 @@ export default function TtsPage() {
             </p>
           </div>
         ) : (
-          <table className="w-full text-[12px]">
-            <thead className="sticky top-0 bg-app-surface text-app-muted backdrop-blur">
-              <tr className="border-b border-app-border text-left">
-                <th className="w-10 px-3 py-2">#</th>
-                <th className="px-2 py-2">角色</th>
-                <th className="px-2 py-2">语音指令</th>
-                <th className="px-2 py-2">文本</th>
-                <th className="w-24 px-2 py-2">状态</th>
-                <th className="w-24 px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((j) => {
-                const run = progress[j.outputName]
-                return (
-                  <tr key={j.outputName} className="border-b border-app-border/60 hover:bg-black/[0.03] dark:hover:bg-white/[0.03]">
-                    <td className="px-3 py-1.5 font-mono text-app-muted">{j.sheetName}:{j.rowIndex + 8}</td>
-                    <td className="px-2 py-1.5">{j.roleName}</td>
-                    <td className="px-2 py-1.5">
-                      <span>{j.voiceCmd}</span>
-                      {j.tone && j.tone !== j.voiceCmd && (
-                        <span className="ml-1.5 text-app-muted">{j.tone}</span>
-                      )}
-                    </td>
-                    <td className="max-w-[1px] truncate px-2 py-1.5" title={j.text}>{j.text}</td>
-                    <td className="px-2 py-1.5">
-                      <StatusBadge status={j.status} run={run} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <div className="flex items-center gap-1">
-                        {j.status !== 'missing' && (
-                          <button
-                            onClick={() => audition(j)}
-                            className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 hover:bg-sky-500/30 dark:text-sky-300"
-                            title="试听"
-                          >
-                            <Play size={11} />
-                          </button>
-                        )}
-                        {(j.status === 'generated' || j.status === 'stale') && (
-                          <button
-                            onClick={() => apply([j.outputName])}
-                            disabled={busy}
-                            className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/30 disabled:opacity-40 dark:text-emerald-300"
-                            title="应用（打对号）：落实到 workspace（关联工程则同时覆盖）"
-                          >
-                            <Check size={12} />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => synth([j.outputName])}
-                          disabled={busy}
-                          className="rounded-md px-1.5 py-0.5 text-app-muted hover:bg-black/5 hover:text-app-text disabled:opacity-40 dark:hover:bg-white/5"
-                          title="重新合成"
-                        >
-                          <RefreshCw size={12} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="h-full w-full">
+            <AgGridReact<TtsRow>
+              theme={appGridTheme}
+              context={context}
+              columnDefs={columnDefs}
+              defaultColDef={defaultColDef}
+              rowData={rowData}
+              onCellValueChanged={onCellValueChanged}
+              stopEditingWhenCellsLoseFocus
+              animateRows={false}
+            />
+          </div>
         )}
       </section>
 
@@ -330,6 +450,51 @@ function Select({ value, onChange }: { value: string; onChange: (v: string) => v
         </option>
       ))}
     </select>
+  )
+}
+
+function StatusCell(p: CustomCellRendererProps<TtsRow>) {
+  if (!p.data) return null
+  return <StatusBadge status={p.data.status} run={p.data.run} />
+}
+
+function ActionsCell(p: CustomCellRendererProps<TtsRow>) {
+  if (!p.data) return null
+  const ctx = p.context as TtsGridContext
+  const job = p.data.__job
+  return (
+    <div className="flex h-full items-center gap-1">
+      {job.status !== 'missing' && (
+        <button
+          type="button"
+          onClick={() => ctx.onAudition(job)}
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 hover:bg-sky-500/30 dark:text-sky-300"
+          title="试听"
+        >
+          <Play size={11} />
+        </button>
+      )}
+      {(job.status === 'generated' || job.status === 'stale') && (
+        <button
+          type="button"
+          onClick={() => ctx.onApplyJob(job)}
+          disabled={p.data.busy}
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/30 disabled:opacity-40 dark:text-emerald-300"
+          title="应用（打对号）：落实到 workspace（关联工程则同时覆盖）"
+        >
+          <Check size={12} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => ctx.onSynthJob(job)}
+        disabled={p.data.busy}
+        className="rounded-md px-1.5 py-0.5 text-app-muted hover:bg-black/5 hover:text-app-text disabled:opacity-40 dark:hover:bg-white/5"
+        title="重新合成"
+      >
+        <RefreshCw size={12} />
+      </button>
+    </div>
   )
 }
 

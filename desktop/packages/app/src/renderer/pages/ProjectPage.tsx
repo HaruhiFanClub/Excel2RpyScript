@@ -3,11 +3,13 @@ import { Rocket, FolderGit2, FileCode2, AudioLines, CircleCheck, TriangleAlert, 
 import type { DeployResult } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 
+const assetCount = (map: Record<string, string>): number => new Set(Object.values(map)).size
+
 export default function ProjectPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
-  const mode = useWorkspaceStore((s) => s.mode)
   const assets = useWorkspaceStore((s) => s.assets)
   const linkProject = useWorkspaceStore((s) => s.linkProject)
+  const clearSheetChanges = useWorkspaceStore((s) => s.clearSheetChanges)
 
   const [scripts, setScripts] = useState(true)
   const [enableVoice, setEnableVoice] = useState(true)
@@ -24,14 +26,16 @@ export default function ProjectPage() {
     setBusy(true)
     setResult(null)
     try {
-      setResult(await window.e2r.deploy({ xlsxPath: workbookPath, mode, scripts, enableVoice }))
+      const r = await window.e2r.deploy({ xlsxPath: workbookPath, scripts, enableVoice })
+      setResult(r)
+      if (r.ok && scripts) clearSheetChanges(undefined, workbookPath)
     } finally {
       setBusy(false)
     }
-  }, [workbookPath, assets, mode, scripts, enableVoice])
+  }, [workbookPath, assets, scripts, enableVoice, clearSheetChanges])
 
-  const imgCount = assets ? Object.keys(assets.images).length : 0
-  const audCount = assets ? Object.keys(assets.audio).length : 0
+  const imgCount = assets ? assetCount(assets.images) : 0
+  const audCount = assets ? assetCount(assets.audio) : 0
 
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col">
@@ -73,7 +77,7 @@ export default function ProjectPage() {
           <input type="checkbox" checked={scripts} onChange={(e) => setScripts(e.target.checked)} className="mt-0.5" />
           <span className="flex items-center gap-1.5 text-[13px]">
             <FileCode2 size={14} className="text-app-muted" /> 生成并写入 .rpy 脚本到 game/
-            <span className="text-app-muted">（覆盖同名文件，模式：{mode === 'default' ? '默认' : '旧版兼容'}）</span>
+            <span className="text-app-muted">（覆盖同名文件，自动使用默认修正模式）</span>
           </span>
         </label>
         <label className="flex items-start gap-2.5">
