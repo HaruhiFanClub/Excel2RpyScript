@@ -15,7 +15,7 @@
 // 演练：pnpm release:dry-run <version>
 
 import { execSync, spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -23,6 +23,10 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(here, '..')
 const notesDir = path.join(rootDir, 'notes')
 const nextNotesPath = path.join(notesDir, 'CHANGELOG-next.md')
+const templateCommentLines = new Set([
+  '<!-- 在这里写下一个版本的更新日志，中文自由发挥 -->',
+  '<!-- 发版时会自动归档到 notes/v<version>.md，并作为 GitHub Release Notes 与 latest.json 的 notes 字段 -->',
+])
 
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
@@ -49,6 +53,14 @@ function run(cmd, options = {}) {
   } catch (err) {
     fail(`命令失败: ${cmd}\n${err instanceof Error ? err.message : String(err)}`)
   }
+}
+
+function stripTemplateComments(content) {
+  return content
+    .split('\n')
+    .filter((line) => !templateCommentLines.has(line.trim()))
+    .join('\n')
+    .trim()
 }
 
 if (!rawVersion) {
@@ -121,11 +133,11 @@ if (!existsSync(nextNotesPath)) {
   fail(`没有 ${path.relative(rootDir, nextNotesPath)}。请先写本版更新日志。`)
 }
 
-const changelogContent = readFileSync(nextNotesPath, 'utf8').trim()
+const changelogContent = stripTemplateComments(readFileSync(nextNotesPath, 'utf8'))
 const nonBlankLines = changelogContent
   .split('\n')
   .map((line) => line.trim())
-  .filter((line) => line && !line.startsWith('<!--'))
+  .filter((line) => line)
 if (!nonBlankLines.length) {
   fail(`${path.relative(rootDir, nextNotesPath)} 还是空的，请先写本版更新日志。`)
 }
@@ -150,7 +162,7 @@ run('pnpm install --lockfile-only --ignore-scripts')
 mkdirSync(notesDir, { recursive: true })
 const archivedNotesPath = path.join(notesDir, `${tagName}.md`)
 if (!dryRun) {
-  copyFileSync(nextNotesPath, archivedNotesPath)
+  writeFileSync(archivedNotesPath, `${changelogContent}\n`)
   writeFileSync(
     nextNotesPath,
     [

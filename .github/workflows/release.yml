@@ -372,11 +372,17 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           NOTES_FILE="release-notes.md"
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+          if [ -f "notes/$TAG.md" ]; then
+            cp "notes/$TAG.md" "$NOTES_FILE"
+          elif git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
             git tag -l --format='%(contents)' "$TAG" > "$NOTES_FILE"
           fi
-          if [ ! -s "$NOTES_FILE" ] && [ -f "notes/$TAG.md" ]; then
-            cp "notes/$TAG.md" "$NOTES_FILE"
+          if [ -s "$NOTES_FILE" ]; then
+            CLEAN_NOTES="$(mktemp)"
+            grep -v -F '<!-- 在这里写下一个版本的更新日志，中文自由发挥 -->' "$NOTES_FILE" \
+              | grep -v -F '<!-- 发版时会自动归档到 notes/v<version>.md，并作为 GitHub Release Notes 与 latest.json 的 notes 字段 -->' \
+              > "$CLEAN_NOTES" || true
+            mv "$CLEAN_NOTES" "$NOTES_FILE"
           fi
           if [ ! -s "$NOTES_FILE" ]; then
             echo "Excel2Rpy $TAG" > "$NOTES_FILE"
