@@ -13,6 +13,7 @@ import {
   queueAudioRenamesForProject,
   applyProjectAudioRenamesForSheet,
   resolveSynthesizedFile,
+  revertGeneratedVoices,
 } from './tts'
 import { loadCharacters, saveCharacters } from './characters'
 import { importWorkbook, pendingDirFor, workspaceSub, type WsType } from './workspace'
@@ -55,6 +56,8 @@ import type {
   TtsJobsResult,
   TtsApplyArgs,
   TtsApplyResult,
+  TtsRevertArgs,
+  TtsRevertResult,
   TtsSynthArgs,
   TtsSynthSummary,
   EngineStartResult,
@@ -491,6 +494,15 @@ function registerIpc(): void {
       const { pending, voice } = ttsDirsFor(args.xlsxPath)
       const { applied } = await applyVoices(args.outputNames, pending, voice, gameAudioDir())
       return { ok: true, applied }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
+  ipcMain.handle('tts:revert', async (_e, args: TtsRevertArgs): Promise<TtsRevertResult> => {
+    try {
+      const { pending } = ttsDirsFor(args.xlsxPath)
+      const { reverted } = await revertGeneratedVoices(args.outputNames, pending)
+      return { ok: true, reverted }
     } catch (e) {
       return { ok: false, error: errMsg(e) }
     }

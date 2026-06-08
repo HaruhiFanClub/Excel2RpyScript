@@ -33,6 +33,16 @@ async function readManifest(dir: string, file = MANIFEST): Promise<Record<string
   }
 }
 
+async function writeManifest(dir: string, file: string, manifest: Record<string, string>): Promise<void> {
+  const target = join(dir, file)
+  if (Object.keys(manifest).length === 0) {
+    await rm(target, { force: true })
+    return
+  }
+  await mkdir(dir, { recursive: true })
+  await writeFile(target, JSON.stringify(manifest, null, 2))
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path)
@@ -207,6 +217,17 @@ function hasManifestEntry(manifest: Record<string, string>, name: string): boole
   return Object.prototype.hasOwnProperty.call(manifest, name)
 }
 
+function deleteManifestEntry(manifest: Record<string, string>, name: string): boolean {
+  const key = name.toLowerCase()
+  let changed = false
+  for (const existing of Object.keys(manifest)) {
+    if (existing.toLowerCase() !== key) continue
+    delete manifest[existing]
+    changed = true
+  }
+  return changed
+}
+
 function stemOfAudioName(name: string): string {
   return name.toLowerCase().replace(/\.wav$/, '')
 }
@@ -287,6 +308,27 @@ export async function applyVoices(
   }
   await writeFile(join(voiceDir, APPLIED), JSON.stringify(appMan, null, 2))
   return { applied }
+}
+
+// 撤销“已生成但未应用”的临时音频：只清理 pending，不影响 workspace/工程中已应用的文件。
+export async function revertGeneratedVoices(
+  outputNames: string[],
+  pendingDir: string,
+): Promise<{ reverted: number }> {
+  const manifest = await readManifest(pendingDir, MANIFEST)
+  let manifestChanged = false
+  let reverted = 0
+  for (const name of outputNames) {
+    if (!safeAudioName(name)) continue
+    const target = await resolveSynthesizedFile(pendingDir, name)
+    if (target) {
+      await rm(target, { force: true })
+      reverted++
+    }
+    manifestChanged = deleteManifestEntry(manifest, name) || manifestChanged
+  }
+  if (manifestChanged) await writeManifest(pendingDir, MANIFEST, manifest)
+  return { reverted }
 }
 
 export async function ttsHealth(

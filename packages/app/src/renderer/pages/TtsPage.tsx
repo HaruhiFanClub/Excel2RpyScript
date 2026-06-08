@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { CustomCellRendererProps } from 'ag-grid-react'
 import { type CellValueChangedEvent, type ColDef } from 'ag-grid-community'
 import {
   AudioLines,
+  Pause,
   Play,
   RefreshCw,
+  Undo2,
   Wand2,
   Check,
   CheckCheck,
@@ -44,12 +46,15 @@ type TtsRow = {
   outputName: string
   run?: RunState
   busy: boolean
+  playing: boolean
+  playbackPaused: boolean
   __job: EnrichedJob
 }
 
 interface TtsGridContext extends GridContext {
   onAudition: (job: EnrichedJob) => void
   onApplyJob: (job: EnrichedJob) => void
+  onRevertJob: (job: EnrichedJob) => void
   onSynthJob: (job: EnrichedJob) => void
 }
 
@@ -70,7 +75,9 @@ export default function TtsPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<Record<string, RunState>>({})
-  const [audio, setAudio] = useState<{ url: string; title: string } | null>(null)
+  const [audio, setAudio] = useState<{ url: string; title: string; outputName: string } | null>(null)
+  const [audioPaused, setAudioPaused] = useState(true)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const [activeSheetKey, setActiveSheetKey] = useState('')
 
   // 启用角色分类：远端（自带模型/端点）/ 内嵌（本地引擎 zero-shot）
@@ -157,10 +164,62 @@ export default function TtsPage() {
     [workbookPath, refresh],
   )
 
+  const revertGenerated = useCallback(
+    async (outputNames: string[]) => {
+      if (!workbookPath || outputNames.length === 0) return
+      const reverted = new Set(outputNames)
+      const r = await window.e2r.ttsRevert({ xlsxPath: workbookPath, outputNames })
+      if (!r.ok && r.error) {
+        setError(r.error)
+      } else {
+        setError(null)
+        setProgress((prev) => {
+          const next = { ...prev }
+          for (const name of outputNames) delete next[name]
+          return next
+        })
+        setAudio((current) => {
+          if (!current || !reverted.has(current.outputName)) return current
+          audioRef.current?.pause()
+          setAudioPaused(true)
+          return null
+        })
+      }
+      await refresh()
+    },
+    [workbookPath, refresh],
+  )
+
+  const toggleAudio = useCallback(() => {
+    const el = audioRef.current
+    if (!el) return
+    if (el.paused) {
+      void el.play().catch((e: unknown) => {
+        setAudioPaused(true)
+        setError(e instanceof Error ? e.message : String(e))
+      })
+    } else {
+      el.pause()
+    }
+  }, [])
+
   const audition = useCallback((job: EnrichedJob) => {
     // 试听不依赖 workspace 应用状态：音频由 asset:// 从 pending → voice → 工程 audio 解析
-    setAudio({ url: assetUrl(`audio/${job.outputName}`), title: job.outputName })
-  }, [])
+    setAudio((current) => {
+      if (current?.outputName === job.outputName) {
+        toggleAudio()
+        return current
+      }
+      audioRef.current?.pause()
+      setAudioPaused(false)
+      setError(null)
+      return {
+        url: `${assetUrl(`audio/${job.outputName}`)}?t=${Date.now()}`,
+        title: job.outputName,
+        outputName: job.outputName,
+      }
+    })
+  }, [toggleAudio])
 
   // 可应用（有 pending 文件可落实）= 已生成 / 未重新生成
   const appliable = jobs.filter((j) => j.status === 'generated' || j.status === 'stale')
@@ -202,9 +261,10 @@ export default function TtsPage() {
       onImport: async () => null,
       onAudition: audition,
       onApplyJob: (job) => void apply([job.outputName]),
+      onRevertJob: (job) => void revertGenerated([job.outputName]),
       onSynthJob: (job) => void synth([job.outputName]),
     }),
-    [config, audition, apply, synth],
+    [config, audition, apply, revertGenerated, synth],
   )
 
   const columnDefs = useMemo<ColDef<TtsRow>[]>(
@@ -263,8 +323,8 @@ export default function TtsPage() {
       {
         headerName: '',
         field: 'outputName',
-        width: 118,
-        minWidth: 104,
+        width: 146,
+        minWidth: 132,
         editable: false,
         sortable: false,
         cellRenderer: ActionsCell,
@@ -285,9 +345,11 @@ export default function TtsPage() {
         outputName: job.outputName,
         run: progress[job.outputName],
         busy,
+        playing: audio?.outputName === job.outputName,
+        playbackPaused: audioPaused,
         __job: job,
       })),
-    [activeJobs, busy, progress],
+    [activeJobs, audio?.outputName, audioPaused, busy, progress],
   )
 
   const onCellValueChanged = useCallback(
@@ -460,8 +522,36 @@ export default function TtsPage() {
       {audio && (
         <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-app-border bg-app-surface px-4 py-2.5 shadow-lg backdrop-blur-xl">
           <span className="max-w-[260px] truncate font-mono text-[12px] text-app-text">{audio.title}</span>
-          <audio key={audio.url} src={audio.url} controls autoPlay className="h-8" />
-          <button onClick={() => setAudio(null)} className="text-app-muted hover:text-app-text">
+          <button
+            type="button"
+            onClick={toggleAudio}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 hover:bg-sky-500/30 dark:text-sky-300"
+            title={audioPaused ? '播放' : '暂停'}
+          >
+            {audioPaused ? <Play size={13} /> : <Pause size={13} />}
+          </button>
+          <audio
+            key={audio.url}
+            ref={audioRef}
+            src={audio.url}
+            controls
+            autoPlay
+            className="h-8"
+            onPlay={() => setAudioPaused(false)}
+            onPause={() => setAudioPaused(true)}
+            onEnded={() => setAudioPaused(true)}
+            onError={() => setAudioPaused(true)}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              audioRef.current?.pause()
+              setAudio(null)
+              setAudioPaused(true)
+            }}
+            className="text-app-muted hover:text-app-text"
+            title="关闭"
+          >
             <X size={16} />
           </button>
         </div>
@@ -495,16 +585,19 @@ function ActionsCell(p: CustomCellRendererProps<TtsRow>) {
   if (!p.data) return null
   const ctx = p.context as TtsGridContext
   const job = p.data.__job
+  const isPlaying = p.data.playing && !p.data.playbackPaused
   return (
     <div className="flex h-full items-center gap-1">
       {job.status !== 'missing' && (
         <button
           type="button"
           onClick={() => ctx.onAudition(job)}
-          className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 hover:bg-sky-500/30 dark:text-sky-300"
-          title="试听"
+          className={`flex h-6 w-6 items-center justify-center rounded-full text-sky-600 hover:bg-sky-500/30 dark:text-sky-300 ${
+            p.data.playing ? 'bg-sky-500/25' : 'bg-sky-500/15'
+          }`}
+          title={isPlaying ? '暂停' : p.data.playing ? '继续播放' : '试听'}
         >
-          <Play size={11} />
+          {isPlaying ? <Pause size={11} /> : <Play size={11} />}
         </button>
       )}
       {(job.status === 'generated' || job.status === 'stale') && (
@@ -516,6 +609,17 @@ function ActionsCell(p: CustomCellRendererProps<TtsRow>) {
           title="应用（打对号）：落实到 workspace（关联工程则同时覆盖）"
         >
           <Check size={12} />
+        </button>
+      )}
+      {job.status === 'generated' && (
+        <button
+          type="button"
+          onClick={() => ctx.onRevertJob(job)}
+          disabled={p.data.busy}
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/15 text-amber-600 hover:bg-amber-500/30 disabled:opacity-40 dark:text-amber-300"
+          title="撤销未应用的生成音频"
+        >
+          <Undo2 size={12} />
         </button>
       )}
       <button

@@ -59,6 +59,11 @@ export interface TtsApplyArgs {
   outputNames: string[] // 要应用（打对号）的语音 outputName 列表
 }
 export type TtsApplyResult = { ok: true; applied: number } | { ok: false; error: string }
+export interface TtsRevertArgs {
+  xlsxPath: string
+  outputNames: string[] // 要撤销的 pending 语音 outputName 列表
+}
+export type TtsRevertResult = { ok: true; reverted: number } | { ok: false; error: string }
 export interface TtsSynthArgs {
   xlsxPath: string
   textLang: string
@@ -166,6 +171,7 @@ export interface E2rApi {
   ttsHealth(baseUrl: string): Promise<TtsHealth>
   ttsJobs(args: TtsJobsArgs): Promise<TtsJobsResult>
   ttsApply(args: TtsApplyArgs): Promise<TtsApplyResult>
+  ttsRevert(args: TtsRevertArgs): Promise<TtsRevertResult>
   ttsSynthesize(args: TtsSynthArgs): Promise<TtsSynthSummary>
   onTtsProgress(cb: (p: TtsProgress) => void): () => void
   ttsEngineStart(): Promise<EngineStartResult>
