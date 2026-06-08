@@ -1,0 +1,204 @@
+@import 'tailwindcss';
+
+/* electron-vite 下自动内容检测不可靠，显式声明源文件 */
+@source "./**/*.{ts,tsx,html}";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- 主题变量（玻璃拟态，浅/深双主题，sky 主色） ---------- */
+@theme {
+  --color-app-bg: var(--app-bg);
+  --color-app-surface: var(--app-surface);
+  --color-app-text: var(--app-text);
+  --color-app-muted: var(--app-muted);
+  --color-app-border: var(--app-border);
+  --color-app-accent: var(--app-accent);
+
+  --font-sans:
+    'Inter Variable', 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+}
+
+:root {
+  color-scheme: light;
+  --app-bg: #f4f6fb;
+  --app-surface: rgb(255 255 255 / 0.72);
+  --app-text: #1a2030;
+  --app-muted: #5b6478;
+  --app-border: rgb(15 23 42 / 0.08);
+  --app-accent: #0ea5e9;
+}
+
+.dark {
+  color-scheme: dark;
+  --app-bg: #0a0f1c;
+  --app-surface: rgb(30 41 59 / 0.55);
+  --app-text: #e6ecf5;
+  --app-muted: #94a3b8;
+  --app-border: rgb(255 255 255 / 0.08);
+  --app-accent: #38bdf8;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--app-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- 玻璃容器 ---------- */
+@utility glass-card {
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px -12px rgb(15 23 42 / 0.12);
+}
+
+@utility glass-input {
+  background: rgb(255 255 255 / 0.55);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--app-text);
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+
+.dark .glass-input {
+  background: rgb(0 0 0 / 0.25);
+}
+
+.glass-input:focus {
+  border-color: rgb(14 165 233 / 0.55);
+  background: rgb(255 255 255 / 0.85);
+  box-shadow: 0 0 0 3px rgb(14 165 233 / 0.12);
+}
+
+.dark .glass-input:focus {
+  background: rgb(15 23 42 / 0.6);
+}
+
+.glass-input::placeholder {
+  color: var(--app-muted);
+}
+
+/* ---------- 滚动条 ---------- */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(100 116 139 / 0.28);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 116 139 / 0.45);
+}
+
+/* ---------- 代码预览 ---------- */
+.code-block {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* ---------- spinner ---------- */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* 拖拽窗口区域辅助类 */
+.drag {
+  -webkit-app-region: drag;
+}
+.nodrag {
+  -webkit-app-region: no-drag;
+}
+
+/* ---------- AG Grid 编辑器：避免透明编辑框透出后方单元格 ---------- */
+.ag-cell-inline-editing,
+.ag-popup-editor {
+  background: rgb(255 255 255 / 0.96) !important;
+  border: 1px solid rgb(14 165 233 / 0.38) !important;
+  box-shadow:
+    0 0 0 3px rgb(14 165 233 / 0.12),
+    0 14px 34px -20px rgb(15 23 42 / 0.45);
+}
+
+.dark .ag-cell-inline-editing,
+.dark .ag-popup-editor {
+  background: rgb(15 23 42 / 0.98) !important;
+  border-color: rgb(56 189 248 / 0.38) !important;
+  box-shadow:
+    0 0 0 3px rgb(56 189 248 / 0.14),
+    0 18px 42px -24px rgb(0 0 0 / 0.85);
+}
+
+.ag-cell-inline-editing .ag-input-field-input,
+.ag-cell-inline-editing .ag-text-field-input,
+.ag-popup-editor .ag-input-field-input,
+.ag-popup-editor .ag-text-field-input,
+.ag-popup-editor textarea {
+  background: transparent !important;
+  color: var(--app-text) !important;
+}
+
+.ag-popup-editor textarea,
+.ag-large-text-input {
+  min-height: 140px;
+  padding: 10px 12px !important;
+  line-height: 1.55;
+}
+
+/* ---------- 表格下拉（角色 / 语音指令）：选中或悬浮单元格才显示下拉按钮 ---------- */
+.e2r-combo-caret {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ag-cell:hover .e2r-combo-caret,
+.ag-cell-focus .e2r-combo-caret {
+  opacity: 1;
+}
+
+/* ---------- 表格资源动作：导入 / 替换 / 播放只在悬浮或选中单元格时显示 ---------- */
+.e2r-asset-action {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ag-cell:hover .e2r-asset-action,
+.ag-cell-focus .e2r-asset-action {
+  opacity: 1;
+}

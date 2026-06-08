@@ -1,0 +1,44 @@
+{
+  "name": "@e2r/app",
+  "version": "1.0.0",
+  "description": "Excel2Rpy Electron 应用：转换 / 表格 / 语音合成 / 检查 / 工程部署",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "pack": "electron-vite build && electron-builder --dir",
+    "dist:mac": "node ../../scripts/build-dist.mjs mac",
+    "dist:win": "node ../../scripts/build-dist.mjs win"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "@e2r/core": "workspace:*",
+    "@fontsource-variable/bricolage-grotesque": "^5.2.10",
+    "@fontsource-variable/hanken-grotesk": "^5.2.8",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "ag-grid-community": "^35.3.1",
+    "ag-grid-react": "^35.3.1",
+    "electron": "32.3.3",
+    "electron-builder": "^26.15.0",
+    "electron-vite": "^2.3.0",
+    "framer-motion": "^12.40.0",
+    "lucide-react": "^1.17.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.7.0",
+    "vite": "^5.4.11",
+    "zustand": "^5.0.14"
+  }
+}
