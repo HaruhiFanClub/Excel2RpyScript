@@ -5,12 +5,23 @@ import { EXCEL_PARSE_START_ROW, EXCEL_PARSE_START_COL } from '../settings/parser
 import { EMPTY, textCell, numberCell, type CellValue } from '../parse/cellValue'
 import { parseSheets, type RawSheet } from '../parse/parser'
 import type { ParsedSheet } from '../convert/converter'
+import {
+  detectWorkbookSchema,
+  LEGACY_SCHEMA,
+  normalizePhysicalRow,
+  type WorkbookSchema,
+} from '../tableSchema'
+import type { SpritePositions } from '../sprites'
 
 export interface ReadWorkbookWarning {
   sheet: string
   row: number
   col: number
   message: string
+}
+
+export interface ReadWorkbookOptions {
+  spritePositions?: SpritePositions
 }
 
 function valueToCell(value: ExcelJS.CellValue, warns: () => void): CellValue {
@@ -65,6 +76,7 @@ export function readExcelCell(cell: ExcelJS.Cell, onWarn: () => void = () => {})
 
 export async function readRawWorkbook(
   filePath: string,
+  options: ReadWorkbookOptions = {},
 ): Promise<{ sheets: RawSheet[]; warnings: ReadWorkbookWarning[] }> {
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.readFile(filePath)
@@ -73,12 +85,19 @@ export async function readRawWorkbook(
 
   for (const ws of wb.worksheets) {
     const rows: CellValue[][] = []
+    const readHeader = (r: number): string[] => {
+      const row = ws.getRow(r)
+      const out: string[] = []
+      for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) out.push(row.getCell(c).text ?? '')
+      return out
+    }
+    const schema: WorkbookSchema = detectWorkbookSchema(readHeader(7), readHeader(6)) ?? LEGACY_SCHEMA
     const startRow = EXCEL_PARSE_START_ROW + 1 // ExcelJS 1 基
     const lastRow = ws.rowCount
     for (let r = startRow; r <= lastRow; r++) {
       const row = ws.getRow(r)
       const cells: CellValue[] = []
-      for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) {
+      for (let c = 1; c <= schema.physicalColumnCount; c++) {
         const rr = r
         const cc = c
         cells.push(
@@ -92,9 +111,9 @@ export async function readRawWorkbook(
           ),
         )
       }
-      rows.push(cells)
+      rows.push(normalizePhysicalRow(cells, schema, options.spritePositions))
     }
-    sheets.push({ name: ws.name, rows })
+    sheets.push({ name: ws.name, rows, schema })
   }
 
   return { sheets, warnings }
@@ -103,7 +122,8 @@ export async function readRawWorkbook(
 // 读取 + 解析（空行跳过/补齐），得到可直接喂给转换器的 ParsedSheet[]。
 export async function readWorkbook(
   filePath: string,
+  options: ReadWorkbookOptions = {},
 ): Promise<{ sheets: ParsedSheet[]; warnings: ReadWorkbookWarning[] }> {
-  const { sheets, warnings } = await readRawWorkbook(filePath)
+  const { sheets, warnings } = await readRawWorkbook(filePath, options)
   return { sheets: parseSheets(sheets), warnings }
 }

@@ -1,5 +1,6 @@
 // 纯数据/类型（无 Node / exceljs 依赖），可被渲染进程安全导入。
 import type { ColKey } from './settings/converterSetting'
+import type { WorkbookSchema } from './tableSchema'
 
 // 表格编辑器展示的「有意义列」（跳过 C–R 预留空列）
 export const TABLE_COLUMNS: { key: ColKey; header: string; width: number }[] = [
@@ -27,6 +28,7 @@ export interface TableRow {
 export interface TableSheet {
   name: string
   rows: TableRow[]
+  schema?: WorkbookSchema
 }
 export interface TableData {
   sheets: TableSheet[]

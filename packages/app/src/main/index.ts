@@ -33,6 +33,7 @@ import {
   diffWorkbooks,
   resolveAssetTarget,
   planTtsAudioRenames,
+  spritePositionsFromConfig,
   type AssetMaps,
   type TableChange,
   type TtsConfig,
@@ -169,7 +170,8 @@ async function writeRpyFile(path: string, file: RpyFile): Promise<void> {
 async function saveTableWithAudioRenames(xlsxPath: string, changes: TableChange[]): Promise<void> {
   if (changes.length === 0) return
   const before = await planJobs(xlsxPath)
-  await saveTableChanges(xlsxPath, changes)
+  const cfg = await loadCharacters()
+  await saveTableChanges(xlsxPath, changes, { spritePositions: spritePositionsFromConfig(cfg) })
   const after = await planJobs(xlsxPath)
   const plan = planTtsAudioRenames(before, after)
   await applyWorkspaceAudioRenames(xlsxPath, plan)
@@ -332,7 +334,8 @@ function registerIpc(): void {
   ipcMain.handle('table:read', async (_e, xlsxPath: string): Promise<TableResult> => {
     try {
       rememberWorkspaceForWorkbook(xlsxPath)
-      const data = await readTable(xlsxPath)
+      const cfg = await loadCharacters()
+      const data = await readTable(xlsxPath, { spritePositions: spritePositionsFromConfig(cfg) })
       return { ok: true, ...data }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -369,7 +372,8 @@ function registerIpc(): void {
   )
   ipcMain.handle('check', async (_e, xlsxPath: string): Promise<CheckResult> => {
     try {
-      const { sheets } = await readWorkbook(xlsxPath)
+      const cfg = await loadCharacters()
+      const { sheets } = await readWorkbook(xlsxPath, { spritePositions: spritePositionsFromConfig(cfg) })
       const issues = checkSheets(
         sheets,
         linkedTransforms.length ? { knownPositions: linkedTransforms } : {},
@@ -381,7 +385,9 @@ function registerIpc(): void {
   })
   ipcMain.handle('diff', async (_e, oldPath: string, newPath: string): Promise<DiffResult> => {
     try {
-      const [o, n] = await Promise.all([readTable(oldPath), readTable(newPath)])
+      const cfg = await loadCharacters()
+      const options = { spritePositions: spritePositionsFromConfig(cfg) }
+      const [o, n] = await Promise.all([readTable(oldPath, options), readTable(newPath, options)])
       return { ok: true, report: diffWorkbooks(o, n) }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }

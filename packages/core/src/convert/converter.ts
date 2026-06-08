@@ -9,10 +9,12 @@ import {
 } from '../settings/converterSetting'
 import { asStr, truthy, rawEq, EMPTY, type CellValue } from '../parse/cellValue'
 import { Role, Text, Image, Transition, Audio, Voice, Menu, Command } from '../model/element'
+import type { WorkbookSchema } from '../tableSchema'
 
 export interface ParsedSheet {
   name: string
   rows: CellValue[][]
+  schema?: WorkbookSchema
 }
 
 export interface RowConvertResult {

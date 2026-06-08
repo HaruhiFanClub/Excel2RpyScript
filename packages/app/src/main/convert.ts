@@ -1,15 +1,20 @@
 import {
   readWorkbook,
   runPipeline,
+  spritePositionsFromConfig,
   type PipelineOptions,
 } from '@e2r/core'
 import type { ConvertArgs, ConvertResult, PreviewArgs, PreviewResult, RpyFile } from '../shared/ipc'
+import { loadCharacters } from './characters'
 
 const DEFAULT_OPTS: PipelineOptions = { mode: 'default', normalizeMode: true, trimRoleNames: true }
 
 // 读 + 转换（不落盘），供预览与导出共用。
 async function build(xlsxPath: string) {
-  const { sheets, warnings: readWarnings } = await readWorkbook(xlsxPath)
+  const cfg = await loadCharacters()
+  const { sheets, warnings: readWarnings } = await readWorkbook(xlsxPath, {
+    spritePositions: spritePositionsFromConfig(cfg),
+  })
   const { files, warnings } = runPipeline(sheets, DEFAULT_OPTS)
   const rpy: RpyFile[] = files.map((f) => ({
     label: f.label,
