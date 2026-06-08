@@ -40,6 +40,7 @@ const api: E2rApi = {
   selectDir: () => ipcRenderer.invoke('dialog:selectDir'),
   pickAudio: () => ipcRenderer.invoke('dialog:openAudio'),
   workspaceImport: (originalPath: string) => ipcRenderer.invoke('workspace:import', originalPath),
+  workspaceAssets: (xlsxPath: string) => ipcRenderer.invoke('workspace:assets', xlsxPath),
   openExternal: (url: string): void => {
     void ipcRenderer.invoke('shell:openExternal', url)
   },
@@ -60,6 +61,7 @@ const api: E2rApi = {
   diff: (oldPath: string, newPath: string): Promise<DiffResult> =>
     ipcRenderer.invoke('diff', oldPath, newPath),
   linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
+  clearProject: (): Promise<void> => ipcRenderer.invoke('project:clear'),
   importAsset: (kind: WsAssetType, name: string, xlsxPath: string): Promise<AssetImportResult> =>
     ipcRenderer.invoke('asset:import', kind, name, xlsxPath),
   ttsCharacters: (): Promise<TtsConfig> => ipcRenderer.invoke('tts:characters'),

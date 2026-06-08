@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } from 'electron'
-import { join, dirname, basename, extname } from 'node:path'
+import { join, dirname, basename, extname, relative, sep } from 'node:path'
 import { existsSync } from 'node:fs'
-import { writeFile, mkdir, copyFile } from 'node:fs/promises'
+import { writeFile, mkdir, copyFile, readdir } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import {
   ttsHealth,
@@ -31,6 +31,7 @@ import {
   diffWorkbooks,
   resolveAssetTarget,
   planTtsAudioRenames,
+  type AssetMaps,
   type TableChange,
   type TtsConfig,
 } from '@e2r/core'
@@ -45,6 +46,7 @@ import type {
   SaveResult,
   CheckResult,
   ProjectResult,
+  WorkspaceAssetsResult,
   AssetImportResult,
   DiffResult,
   TtsHealth,
@@ -71,22 +73,76 @@ protocol.registerSchemesAsPrivileged([
 
 let linkedGamePath: string | null = null
 let linkedTransforms: string[] = []
+let currentWorkspaceDir: string | null = null
 let currentPendingDir: string | null = null // 当前表的临时语音目录（已生成、可试听）
 let currentVoiceDir: string | null = null // 当前表的已应用语音目录（workspace/<表>/voice）
 
 const runtimeIconPath = (): string =>
   app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(__dirname, '../../build/icon.png')
 
-function uniqueAssetFilename(dir: string, original: string): string {
+function rememberWorkspaceForWorkbook(xlsxPath: string): string {
+  currentWorkspaceDir = dirname(xlsxPath)
+  return currentWorkspaceDir
+}
+
+function uniqueAssetFilenameAcross(dirs: string[], original: string): string {
   const ext = extname(original)
   const stem = basename(original, ext)
   let candidate = original
   let i = 2
-  while (existsSync(join(dir, candidate))) {
+  while (dirs.some((dir) => existsSync(join(dir, candidate)))) {
     candidate = `${stem}-${i}${ext}`
     i += 1
   }
   return candidate
+}
+
+const IMG_EXT = new Set(IMAGE_EXTS.map((e) => `.${e}`))
+const AUD_EXT = new Set(AUDIO_EXTS.map((e) => `.${e}`))
+
+function indexAsset(out: Record<string, string>, root: string, fullPath: string): void {
+  const file = basename(fullPath)
+  const ext = extname(file)
+  const stemKey = basename(file, ext).toLowerCase()
+  const fileKey = file.toLowerCase()
+  const rel = relative(root, fullPath).split(sep).join('/')
+  if (!(stemKey in out)) out[stemKey] = rel
+  if (!(fileKey in out)) out[fileKey] = rel
+}
+
+async function walkWorkspaceAssets(
+  root: string,
+  subdir: string,
+  exts: Set<string>,
+  out: Record<string, string>,
+): Promise<void> {
+  const dir = join(root, subdir)
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith('.')) continue
+      await walkWorkspaceAssets(root, relative(root, full), exts, out)
+    } else if (exts.has(extname(entry.name).toLowerCase())) {
+      indexAsset(out, root, full)
+    }
+  }
+}
+
+async function scanWorkspaceAssets(workspaceDir: string): Promise<AssetMaps> {
+  const images: Record<string, string> = {}
+  const audio: Record<string, string> = {}
+  await walkWorkspaceAssets(workspaceDir, 'background', IMG_EXT, images)
+  await walkWorkspaceAssets(workspaceDir, 'sprite', IMG_EXT, images)
+  await walkWorkspaceAssets(workspaceDir, 'music', AUD_EXT, audio)
+  await walkWorkspaceAssets(workspaceDir, 'sound', AUD_EXT, audio)
+  await walkWorkspaceAssets(workspaceDir, 'voice', AUD_EXT, audio)
+  return { images, audio }
 }
 
 function importCellValue(kind: WsType, fileName: string): string {
@@ -187,7 +243,17 @@ function registerIpc(): void {
   ipcMain.handle('workspace:import', async (_e, originalPath: string): Promise<WorkspaceImportResult> => {
     try {
       const info = await importWorkbook(originalPath)
+      currentWorkspaceDir = info.dir
       return { ok: true, dir: info.dir, copyPath: info.copyPath }
+    } catch (e) {
+      return { ok: false, error: errMsg(e) }
+    }
+  })
+
+  ipcMain.handle('workspace:assets', async (_e, xlsxPath: string): Promise<WorkspaceAssetsResult> => {
+    try {
+      const workspaceDir = rememberWorkspaceForWorkbook(xlsxPath)
+      return { ok: true, assets: await scanWorkspaceAssets(workspaceDir) }
     } catch (e) {
       return { ok: false, error: errMsg(e) }
     }
@@ -260,6 +326,7 @@ function registerIpc(): void {
   )
   ipcMain.handle('table:read', async (_e, xlsxPath: string): Promise<TableResult> => {
     try {
+      rememberWorkspaceForWorkbook(xlsxPath)
       const data = await readTable(xlsxPath)
       return { ok: true, ...data }
     } catch (e) {
@@ -326,14 +393,18 @@ function registerIpc(): void {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
+  ipcMain.handle('project:clear', (): void => {
+    linkedGamePath = null
+    linkedTransforms = []
+  })
 
-  // 从表格导入/替换资源：必须有关联工程，直接复制到 game/images|audio。
-  // 单元格值来自导入文件名；重名文件自动追加 -2/-3，避免覆盖已有素材。
+  // 从表格导入/替换资源：始终复制到当前工作簿 workspace；
+  // 若已关联工程，再同步复制到 game/images|audio。单元格值来自导入文件名，重名自动追加 -2/-3。
   ipcMain.handle(
     'asset:import',
-    async (_e, kind: WsType, _currentValue: string, _xlsxPath: string): Promise<AssetImportResult> => {
+    async (_e, kind: WsType, _currentValue: string, xlsxPath: string): Promise<AssetImportResult> => {
       try {
-        if (!linkedGamePath) return { ok: false, error: '未关联 Ren’Py 工程' }
+        if (!xlsxPath) return { ok: false, error: '未选择工作簿' }
         const isAudio = kind === 'music' || kind === 'sound'
         const filters = isAudio
           ? [{ name: '音频', extensions: AUDIO_EXTS }]
@@ -341,18 +412,30 @@ function registerIpc(): void {
         const r = await dialog.showOpenDialog({ properties: ['openFile'], filters })
         const src = r.canceled ? null : r.filePaths[0]
         if (!src) return { ok: false, error: '' } // 取消
-        const sub = isAudio ? 'audio' : 'images'
-        const targetDir = join(linkedGamePath, sub)
-        await mkdir(targetDir, { recursive: true })
-        const fileName = uniqueAssetFilename(targetDir, basename(src))
-        await copyFile(src, join(targetDir, fileName))
-        const index = await scanRenpyAssets(linkedGamePath)
-        linkedTransforms = index.transforms
+        const workspaceDir = rememberWorkspaceForWorkbook(xlsxPath)
+        const workspaceTargetDir = workspaceSub(workspaceDir, kind)
+        const projectSub = isAudio ? 'audio' : 'images'
+        const projectTargetDir = linkedGamePath ? join(linkedGamePath, projectSub) : null
+        await mkdir(workspaceTargetDir, { recursive: true })
+        if (projectTargetDir) await mkdir(projectTargetDir, { recursive: true })
+        const fileName = uniqueAssetFilenameAcross(
+          [workspaceTargetDir, ...(projectTargetDir ? [projectTargetDir] : [])],
+          basename(src),
+        )
+        await copyFile(src, join(workspaceTargetDir, fileName))
+        let project: Awaited<ReturnType<typeof scanRenpyAssets>> | null = null
+        if (projectTargetDir && linkedGamePath) {
+          await copyFile(src, join(projectTargetDir, fileName))
+          project = await scanRenpyAssets(linkedGamePath)
+          linkedTransforms = project.transforms
+        }
+        const workspace = await scanWorkspaceAssets(workspaceDir)
         return {
           ok: true,
           value: importCellValue(kind, fileName),
-          rel: `${sub}/${fileName}`,
-          index,
+          rel: `${kind}/${fileName}`,
+          workspace,
+          project,
         }
       } catch (e) {
         return { ok: false, error: errMsg(e) }
@@ -364,7 +447,7 @@ function registerIpc(): void {
   // 当前表的语音目录：pending（临时/已生成，放系统临时区）+ voice（已应用，workspace/<表>/voice）。
   // workspaceDir = 工作簿副本所在目录（dirname）。
   const ttsDirsFor = (xlsxPath: string): { pending: string; voice: string } => {
-    const ws = dirname(xlsxPath)
+    const ws = rememberWorkspaceForWorkbook(xlsxPath)
     const pending = pendingDirFor(ws)
     const voice = workspaceSub(ws, 'voice')
     currentPendingDir = pending
@@ -383,7 +466,7 @@ function registerIpc(): void {
     try {
       const cfg = await loadCharacters()
       const { pending, voice } = ttsDirsFor(args.xlsxPath)
-      const jobs = await enrichedJobs(args.xlsxPath, cfg, args.textLang, pending, voice)
+      const jobs = await enrichedJobs(args.xlsxPath, cfg, args.textLang, pending, voice, gameAudioDir())
       return { ok: true, jobs, audioDir: pending }
     } catch (e) {
       return { ok: false, error: errMsg(e) }
@@ -464,7 +547,7 @@ void app.whenReady().then(() => {
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
       let abs: string | null = null
       if (rel.startsWith('audio/')) {
-        // 语音/音频试听：依次在 pending(已生成) → voice(已应用) → 关联工程 game/audio 中查找
+        // 语音/音频试听：依次在 pending(已生成) → voice(已应用) → 关联工程 → workspace 中查找
         const name = rel.slice('audio/'.length)
         const candidates = [
           currentPendingDir,
@@ -479,8 +562,11 @@ void app.whenReady().then(() => {
             break
           }
         }
+        if (!abs && linkedGamePath) abs = resolveAssetTarget(rel, linkedGamePath, null)
+        if (!abs && currentWorkspaceDir) abs = resolveAssetTarget(rel, currentWorkspaceDir, null)
       } else {
-        abs = resolveAssetTarget(rel, linkedGamePath, null)
+        if (linkedGamePath) abs = resolveAssetTarget(rel, linkedGamePath, null)
+        if (!abs && currentWorkspaceDir) abs = resolveAssetTarget(rel, currentWorkspaceDir, null)
       }
       if (!abs) return new Response('not found', { status: 404 })
       return net.fetch(pathToFileURL(abs).toString())

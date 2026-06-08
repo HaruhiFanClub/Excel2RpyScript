@@ -13,7 +13,7 @@ import { TABLE_COLUMNS, type TableRow } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
 import { spritePositionsFromConfig } from '@e2r/core/tts'
 import { resolveImage } from '@e2r/core/assets'
-import type { CellEdit, TableChange, TableRowOperation } from '../../shared/ipc'
+import type { AssetMaps, CellEdit, TableChange, TableRowOperation } from '../../shared/ipc'
 import { useWorkspaceStore } from '../stores/useWorkspaceStore'
 import { useCharactersStore } from '../stores/useCharactersStore'
 import {
@@ -48,6 +48,14 @@ const SPRITE_SUB: { field: string; header: string; width: number }[] = [
   { field: 'sprite_right', header: '立绘·右', width: 112 },
 ]
 const editKey = (sheet: string, row: number, col: string) => `${sheet} ${row} ${col}`
+const EMPTY_ASSETS: AssetMaps = { images: {}, audio: {} }
+
+function mergeAssetMaps(workspace: AssetMaps | null, project: AssetMaps | null): AssetMaps {
+  return {
+    images: { ...(workspace?.images ?? {}), ...(project?.images ?? {}) },
+    audio: { ...(workspace?.audio ?? {}), ...(project?.audio ?? {}) },
+  }
+}
 
 function eventCellRect(event: Event | null | undefined): AnchorRect | null {
   const target = event?.target instanceof HTMLElement ? event.target : null
@@ -88,10 +96,16 @@ function recomputeEffectiveRoles(rows: Row[]): void {
 
 export default function TablePage({ active: pageActive = true }: { active?: boolean }) {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
+  const workspaceAssets = useWorkspaceStore((s) =>
+    s.workspaceAssetsWorkbookPath === s.workbookPath ? s.workspaceAssets : null,
+  )
   const assets = useWorkspaceStore((s) => s.assets)
   const setAssets = useWorkspaceStore((s) => s.setAssets)
+  const setWorkspaceAssets = useWorkspaceStore((s) => s.setWorkspaceAssets)
+  const refreshWorkspaceAssets = useWorkspaceStore((s) => s.refreshWorkspaceAssets)
   const markSheetChanges = useWorkspaceStore((s) => s.markSheetChanges)
   const tableData = useWorkspaceStore((s) => s.tableData)
+  const tableDataRevision = useWorkspaceStore((s) => s.tableDataRevision)
   const tableWorkbookPath = useWorkspaceStore((s) => s.tableWorkbookPath)
   const tableLoading = useWorkspaceStore((s) => s.tableLoading)
   const tableError = useWorkspaceStore((s) => s.tableError)
@@ -149,6 +163,11 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   }, [data, loadTableData, pageActive, workbookPath])
 
   useEffect(() => {
+    if (!workbookPath || !pageActive) return
+    void refreshWorkspaceAssets(workbookPath)
+  }, [pageActive, refreshWorkspaceAssets, workbookPath])
+
+  useEffect(() => {
     if (!data) return
     setActive((a) => (a < data.sheets.length ? a : 0))
   }, [data])
@@ -169,27 +188,31 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   useEffect(() => {
     setImagePreview(null)
     setSelectedRow(null)
-  }, [active, assets])
+  }, [active, assets, workspaceAssets])
 
   // 角色配置会影响立绘三列拆分结果，缓存必须失效。
   const spriteKey = useMemo(() => JSON.stringify(spritePositions), [spritePositions])
 
   useEffect(() => {
     rowDataCache.current.clear()
-  }, [spriteKey, data])
+  }, [spriteKey, data, tableDataRevision])
 
   // 关联工程 / 配置变化后刷新单元格
   useEffect(() => {
     gridApi.current?.refreshCells({ force: true })
-  }, [assets, ttsConfig])
+  }, [assets, ttsConfig, tableDataRevision, workspaceAssets])
 
   const sheet = data?.sheets[active]
   const shownError = localError ?? error
   const updateDirty = useCallback(() => setDirty(edits.current.size + rowOps.current.length), [])
+  const availableAssets = useMemo(
+    () => (workbookPath ? mergeAssetMaps(workspaceAssets, assets) : null),
+    [assets, workbookPath, workspaceAssets],
+  )
 
   const context = useMemo<GridContext>(
     () => ({
-      assets: assets ? { images: assets.images, audio: assets.audio } : null,
+      assets: availableAssets ?? EMPTY_ASSETS,
       ttsConfig,
       onImage: (url, title) =>
         setImagePreview({
@@ -199,10 +222,11 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         }),
       onAudio: (url, title) => setAudio({ url, title }),
       onImport: async (kind, currentValue) => {
-        if (!workbookPath || !assets) return null
+        if (!workbookPath) return null
         const r = await window.e2r.importAsset(kind, currentValue, workbookPath)
         if (r.ok) {
-          setAssets(r.index)
+          setWorkspaceAssets(r.workspace, workbookPath)
+          if (r.project) setAssets(r.project)
           gridApi.current?.refreshCells({ force: true })
           setLocalError(null)
           return r.value
@@ -211,7 +235,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         return null
       },
     }),
-    [assets, ttsConfig, setAssets, workbookPath],
+    [availableAssets, ttsConfig, workbookPath, setWorkspaceAssets, setAssets],
   )
 
   const getRowId = useCallback((p: GetRowIdParams<Row>) => {
@@ -270,7 +294,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   const defaultColDef = useMemo<ColDef<Row>>(() => defaultGridColDef, [])
   const rowData = useMemo<Row[]>(() => {
     if (!sheet) return []
-    const cacheKey = `${tableWorkbookPath}:${sheet.name}`
+    const cacheKey = `${tableWorkbookPath}:${sheet.name}:${tableDataRevision}`
     const cached = rowDataCache.current.get(cacheKey)
     if (cached && cached.sourceRows === sheet.rows && cached.spriteKey === spriteKey) {
       return cached.rows
@@ -293,7 +317,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     })
     rowDataCache.current.set(cacheKey, { sourceRows: sheet.rows, spriteKey, rows })
     return rows
-  }, [sheet, spriteKey, spritePositions, tableWorkbookPath])
+  }, [sheet, spriteKey, spritePositions, tableDataRevision, tableWorkbookPath])
 
   const onGridReady = useCallback((e: GridReadyEvent<Row>) => {
     gridApi.current = e.api

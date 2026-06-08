@@ -52,7 +52,7 @@ export function WorkspaceBar() {
       {assets ? (
         <button
           type="button"
-          onClick={clearProject}
+          onClick={() => void clearProject()}
           title={`${assets.gamePath}（点击解除）`}
           className="nodrag flex h-[34px] shrink-0 items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 dark:text-emerald-300"
         >

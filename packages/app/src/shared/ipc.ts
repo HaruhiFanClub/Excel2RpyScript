@@ -7,6 +7,7 @@ import type {
   TableRowOperation,
   CheckIssue,
   AssetIndex,
+  AssetMaps,
   DiffReport,
   TtsConfig,
   TtsJob,
@@ -15,6 +16,7 @@ import type {
 } from '@e2r/core'
 
 export type {
+  AssetMaps,
   CellEdit,
   TableChange,
   TableRowOperation,
@@ -89,10 +91,13 @@ export type WorkspaceImportResult =
   | { ok: true; dir: string; copyPath: string }
   | { ok: false; error: string }
 export type ProjectResult = ({ ok: true } & AssetIndex) | { ok: false; error: string }
-// 表格资源导入：仅在已关联工程时复制到 game/images|audio，并返回应写入单元格的资源名。
+export type WorkspaceAssetsResult =
+  | { ok: true; assets: AssetMaps }
+  | { ok: false; error: string }
+// 表格资源导入：始终复制进 workspace；若已关联工程，同时复制到 game/images|audio。
 export type WsAssetType = 'background' | 'sprite' | 'music' | 'sound'
 export type AssetImportResult =
-  | { ok: true; value: string; rel: string; index: AssetIndex }
+  | { ok: true; value: string; rel: string; workspace: AssetMaps; project: AssetIndex | null }
   | { ok: false; error: string }
 export type DiffResult = { ok: true; report: DiffReport } | { ok: false; error: string }
 export type TableResult = ({ ok: true } & TableData) | { ok: false; error: string }
@@ -140,6 +145,7 @@ export interface E2rApi {
   selectDir(): Promise<string | null>
   pickAudio(): Promise<string | null>
   workspaceImport(originalPath: string): Promise<WorkspaceImportResult>
+  workspaceAssets(xlsxPath: string): Promise<WorkspaceAssetsResult>
   openExternal(url: string): void
   checkUpdates(): Promise<UpdateCheckResult>
   preview(args: PreviewArgs): Promise<PreviewResult>
@@ -153,6 +159,7 @@ export interface E2rApi {
   check(xlsxPath: string): Promise<CheckResult>
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
+  clearProject(): Promise<void>
   importAsset(kind: WsAssetType, name: string, xlsxPath: string): Promise<AssetImportResult>
   ttsCharacters(): Promise<TtsConfig>
   ttsSaveCharacters(config: TtsConfig): Promise<SaveResult>

@@ -203,26 +203,35 @@ export async function applyProjectAudioRenamesForSheet(
   return renamed
 }
 
-// 列出任务并标注状态。两段式：
+function hasManifestEntry(manifest: Record<string, string>, name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(manifest, name)
+}
+
+// 列出任务并标注状态。优先使用带签名的 workspace/pending 清单做精确判断：
 //  pending 目录里有且签名匹配 → generated（临时，可试听）
 //  voice  目录里有且签名匹配 → applied（已落实到 workspace）
-//  仅存在但签名不匹配 → stale（输入已改）；都没有 → missing
+//  带签名但不匹配 → stale（输入已改）
+//  关联工程 game/audio 中已有同名 wav → applied（历史文件通常无签名，按已存在处理）
+//  都没有 → missing
 export async function enrichedJobs(
   xlsxPath: string,
   cfg: TtsConfig,
   textLang: string,
   pendingDir: string,
   voiceDir: string,
+  gameAudioDir?: string | null,
 ): Promise<EnrichedJob[]> {
   const jobs = await planJobs(xlsxPath)
-  const [pendWavs, voiceWavs, genMan, appMan] = await Promise.all([
+  const [pendWavs, voiceWavs, projectWavs, genMan, appMan] = await Promise.all([
     listSynthesized(pendingDir),
     listSynthesized(voiceDir),
+    gameAudioDir ? listSynthesized(gameAudioDir) : Promise.resolve([]),
     readManifest(pendingDir, MANIFEST),
     readManifest(voiceDir, APPLIED),
   ])
   const inPending = new Set(pendWavs)
   const inVoice = new Set(voiceWavs)
+  const inProject = new Set(projectWavs)
   return jobs.map((j) => {
     const tone = toneFor(cfg, j.voiceCmd)
     const sig = ttsJobSignature(j, cfg, textLang)
@@ -230,7 +239,13 @@ export async function enrichedJobs(
     let status: EnrichedJob['status']
     if (inVoice.has(name) && appMan[name] === sig) status = 'applied'
     else if (inPending.has(name) && genMan[name] === sig) status = 'generated'
-    else if (inVoice.has(name) || inPending.has(name)) status = 'stale'
+    else if (
+      (inVoice.has(name) && hasManifestEntry(appMan, name)) ||
+      (inPending.has(name) && hasManifestEntry(genMan, name))
+    )
+      status = 'stale'
+    else if (inProject.has(name) || inVoice.has(name)) status = 'applied'
+    else if (inPending.has(name)) status = 'generated'
     else status = 'missing'
     return { ...j, tone, status }
   })

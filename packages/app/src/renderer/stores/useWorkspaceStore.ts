@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { TABLE_COLUMNS, type TableData } from '@e2r/core/table'
-import type { AssetIndex, CellEdit, PreviewData, TableRowOperation } from '../../shared/ipc'
+import type { AssetIndex, AssetMaps, CellEdit, PreviewData, TableRowOperation } from '../../shared/ipc'
 
 let convertSeq = 0
 let tableReadSeq = 0
@@ -21,10 +21,13 @@ interface WorkspaceState {
   converting: boolean
   convertError: string | null
   tableData: TableData | null
+  tableDataRevision: number
   tableWorkbookPath: string
   tableLoading: boolean
   tableError: string | null
   sheetChanges: SheetChangeState // 已保存到表格、但尚未应用到关联工程的 sheet
+  workspaceAssets: AssetMaps | null // 当前工作簿 workspace 内已导入的图片/音频资源
+  workspaceAssetsWorkbookPath: string
   assets: AssetIndex | null // 关联的 Ren'Py 工程资源索引（不持久化，启动时按 renpyDir 重扫）
   renpyDir: string // 关联工程时用户选择的目录（持久化，用于重开时重新关联）
   setWorkbookPath: (p: string) => void
@@ -38,9 +41,11 @@ interface WorkspaceState {
   applyTableRowOpsToCache: (ops: TableRowOperation[], workbookPath?: string) => void
   markSheetChanges: (sheetNames: string[], workbookPath?: string) => void
   clearSheetChanges: (sheetNames?: string[], workbookPath?: string) => void
+  refreshWorkspaceAssets: (workbookPath?: string) => Promise<AssetMaps | null>
+  setWorkspaceAssets: (assets: AssetMaps, workbookPath?: string) => void
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
   setAssets: (a: AssetIndex) => void
-  clearProject: () => void
+  clearProject: () => Promise<void>
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -54,10 +59,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       converting: false,
       convertError: null,
       tableData: null,
+      tableDataRevision: 0,
       tableWorkbookPath: '',
       tableLoading: false,
       tableError: null,
       sheetChanges: { workbookPath: '', sheets: {} },
+      workspaceAssets: null,
+      workspaceAssetsWorkbookPath: '',
       assets: null,
       renpyDir: '',
       setWorkbookPath: (workbookPath) => {
@@ -67,9 +75,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           convertWorkbookPath: '',
           convertError: null,
           tableData: null,
+          tableDataRevision: 0,
           tableWorkbookPath: '',
           tableError: null,
           sheetChanges: { workbookPath, sheets: {} },
+          workspaceAssets: null,
+          workspaceAssetsWorkbookPath: '',
         })
         if (workbookPath) void get().runConvert(workbookPath)
       },
@@ -83,10 +94,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             converting: false,
             convertError: null,
             tableData: null,
+            tableDataRevision: 0,
             tableWorkbookPath: '',
             tableLoading: false,
             tableError: null,
             sheetChanges: { workbookPath: '', sheets: {} },
+            workspaceAssets: null,
+            workspaceAssetsWorkbookPath: '',
           })
           return
         }
@@ -99,10 +113,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             convertWorkbookPath: '',
             convertError: null,
             tableData: null,
+            tableDataRevision: 0,
             tableWorkbookPath: '',
             tableError: null,
             sheetChanges: { workbookPath: r.copyPath, sheets: {} },
+            workspaceAssets: null,
+            workspaceAssetsWorkbookPath: '',
           })
+          void get().refreshWorkspaceAssets(r.copyPath)
           void get().runConvert(r.copyPath)
         } else {
           // 兜底：导入失败仍可用原表
@@ -112,10 +130,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             convertWorkbookPath: '',
             convertError: null,
             tableData: null,
+            tableDataRevision: 0,
             tableWorkbookPath: '',
             tableError: null,
             sheetChanges: { workbookPath: originalPath, sheets: {} },
+            workspaceAssets: null,
+            workspaceAssetsWorkbookPath: '',
           })
+          void get().refreshWorkspaceAssets(originalPath)
           void get().runConvert(originalPath)
         }
       },
@@ -171,7 +193,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       loadTableData: async (workbookPath, opts) => {
         const targetWorkbook = workbookPath ?? get().workbookPath
         if (!targetWorkbook) {
-          set({ tableData: null, tableWorkbookPath: '', tableLoading: false, tableError: null })
+          set({
+            tableData: null,
+            tableDataRevision: 0,
+            tableWorkbookPath: '',
+            tableLoading: false,
+            tableError: null,
+          })
           return null
         }
 
@@ -194,7 +222,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             return null
           }
           const next = { sheets: r.sheets }
-          set({ tableData: next, tableWorkbookPath: targetWorkbook, tableError: null })
+          set((state) => ({
+            tableData: next,
+            tableDataRevision: state.tableDataRevision + 1,
+            tableWorkbookPath: targetWorkbook,
+            tableError: null,
+          }))
           return next
         } catch (e) {
           if (seq === tableReadSeq) {
@@ -238,7 +271,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             return { ...sheet, rows }
           })
 
-          return changed ? { tableData: { sheets } } : {}
+          return changed
+            ? { tableData: { sheets }, tableDataRevision: state.tableDataRevision + 1 }
+            : {}
         })
       },
       applyTableRowOpsToCache: (ops, workbookPath) => {
@@ -277,7 +312,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             return { ...sheet, rows }
           })
 
-          return changed ? { tableData: { sheets } } : {}
+          return changed
+            ? { tableData: { sheets }, tableDataRevision: state.tableDataRevision + 1 }
+            : {}
         })
       },
       markSheetChanges: (sheetNames, workbookPath) => {
@@ -304,6 +341,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           for (const name of sheetNames) delete next[name]
           return { sheetChanges: { workbookPath: targetWorkbook, sheets: next } }
         }),
+      refreshWorkspaceAssets: async (workbookPath) => {
+        const targetWorkbook = workbookPath ?? get().workbookPath
+        if (!targetWorkbook) {
+          set({ workspaceAssets: null, workspaceAssetsWorkbookPath: '' })
+          return null
+        }
+        const r = await window.e2r.workspaceAssets(targetWorkbook)
+        if (!r.ok) return null
+        set({ workspaceAssets: r.assets, workspaceAssetsWorkbookPath: targetWorkbook })
+        return r.assets
+      },
+      setWorkspaceAssets: (workspaceAssets, workbookPath) =>
+        set((state) => ({
+          workspaceAssets,
+          workspaceAssetsWorkbookPath: workbookPath ?? state.workbookPath,
+        })),
       linkProject: async (dir) => {
         const r = await window.e2r.linkProject(dir)
         if (r.ok) {
@@ -316,7 +369,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         return { ok: false, error: r.error }
       },
       setAssets: (assets) => set({ assets }),
-      clearProject: () => set({ assets: null, renpyDir: '' }),
+      clearProject: async () => {
+        await window.e2r.clearProject()
+        set({ assets: null, renpyDir: '' })
+      },
     }),
     {
       name: 'e2r-workspace',

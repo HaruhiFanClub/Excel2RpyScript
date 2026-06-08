@@ -55,6 +55,7 @@ interface TtsGridContext extends GridContext {
 
 export default function TtsPage() {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
+  const projectKey = useWorkspaceStore((s) => s.assets?.gamePath ?? '')
   const markSheetChanges = useWorkspaceStore((s) => s.markSheetChanges)
   const applyTableEditsToCache = useWorkspaceStore((s) => s.applyTableEditsToCache)
   const config = useCharactersStore((s) => s.config)
@@ -97,7 +98,7 @@ export default function TtsPage() {
       setJobs(r.jobs)
       setError(null)
     } else setError(r.error)
-  }, [workbookPath, textLang])
+  }, [workbookPath, textLang, projectKey])
 
   useEffect(() => {
     void refresh()
@@ -157,7 +158,7 @@ export default function TtsPage() {
   )
 
   const audition = useCallback((job: EnrichedJob) => {
-    // 试听不依赖关联工程：音频由 asset:// 从 pending(已生成)/voice(已应用) 解析
+    // 试听不依赖 workspace 应用状态：音频由 asset:// 从 pending → voice → 工程 audio 解析
     setAudio({ url: assetUrl(`audio/${job.outputName}`), title: job.outputName })
   }, [])
 

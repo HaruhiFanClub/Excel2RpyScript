@@ -7,9 +7,9 @@ function pathApiFor(root: string): typeof posix {
 }
 
 // 解析 asset:// 请求到磁盘绝对路径（含越界防护）。
-//  - 关联工程：一切相对工程 game 目录解析（图片/音频/转场等）。
-//  - 未关联：仅 audio/* 可从当前 TTS 音频目录（表旁 audio）解析 → 未关联也能试听。
-// 返回 null 表示拒绝（越界）或无可用根（未关联且非音频）。
+//  - 传入 game/workspace 根时：按相对根目录解析（图片/音频/转场等）。
+//  - 未传入根时：仅 audio/* 可从当前 TTS 音频目录解析 → 未关联工程也能试听。
+// 返回 null 表示拒绝（越界）或无可用根。
 export function resolveAssetTarget(
   rel: string,
   gameRoot: string | null,
