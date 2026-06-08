@@ -1,6 +1,6 @@
 {
   "name": "@e2r/app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Excel2Rpy Electron 应用：转换 / 表格 / 语音合成 / 检查 / 工程部署",
   "type": "module",
   "main": "./out/main/index.js",
