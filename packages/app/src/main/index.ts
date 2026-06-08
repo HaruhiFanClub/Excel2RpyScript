@@ -12,6 +12,7 @@ import {
   applyWorkspaceAudioRenames,
   queueAudioRenamesForProject,
   applyProjectAudioRenamesForSheet,
+  resolveSynthesizedFile,
 } from './tts'
 import { loadCharacters, saveCharacters } from './characters'
 import { importWorkbook, pendingDirFor, workspaceSub, type WsType } from './workspace'
@@ -73,6 +74,7 @@ protocol.registerSchemesAsPrivileged([
 
 let linkedGamePath: string | null = null
 let linkedTransforms: string[] = []
+let linkedAudioNames: string[] = []
 let currentWorkspaceDir: string | null = null
 let currentPendingDir: string | null = null // 当前表的临时语音目录（已生成、可试听）
 let currentVoiceDir: string | null = null // 当前表的已应用语音目录（workspace/<表>/voice）
@@ -388,6 +390,7 @@ function registerIpc(): void {
       const index = await scanRenpyAssets(gamePath)
       linkedGamePath = gamePath
       linkedTransforms = index.transforms
+      linkedAudioNames = Object.keys(index.audio)
       return { ok: true, ...index }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -396,6 +399,7 @@ function registerIpc(): void {
   ipcMain.handle('project:clear', (): void => {
     linkedGamePath = null
     linkedTransforms = []
+    linkedAudioNames = []
   })
 
   // 从表格导入/替换资源：始终复制到当前工作簿 workspace；
@@ -428,6 +432,7 @@ function registerIpc(): void {
           await copyFile(src, join(projectTargetDir, fileName))
           project = await scanRenpyAssets(linkedGamePath)
           linkedTransforms = project.transforms
+          linkedAudioNames = Object.keys(project.audio)
         }
         const workspace = await scanWorkspaceAssets(workspaceDir)
         return {
@@ -466,7 +471,15 @@ function registerIpc(): void {
     try {
       const cfg = await loadCharacters()
       const { pending, voice } = ttsDirsFor(args.xlsxPath)
-      const jobs = await enrichedJobs(args.xlsxPath, cfg, args.textLang, pending, voice, gameAudioDir())
+      const jobs = await enrichedJobs(
+        args.xlsxPath,
+        cfg,
+        args.textLang,
+        pending,
+        voice,
+        gameAudioDir(),
+        linkedAudioNames,
+      )
       return { ok: true, jobs, audioDir: pending }
     } catch (e) {
       return { ok: false, error: errMsg(e) }
@@ -541,7 +554,7 @@ function registerIpc(): void {
 }
 
 void app.whenReady().then(() => {
-  protocol.handle('asset', (request) => {
+  protocol.handle('asset', async (request) => {
     try {
       const url = new URL(request.url)
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
@@ -556,11 +569,8 @@ void app.whenReady().then(() => {
         ]
         for (const d of candidates) {
           if (!d) continue
-          const p = resolveAssetTarget(`audio/${name}`, null, d)
-          if (p && existsSync(p)) {
-            abs = p
-            break
-          }
+          abs = await resolveSynthesizedFile(d, name)
+          if (abs) break
         }
         if (!abs && linkedGamePath) abs = resolveAssetTarget(rel, linkedGamePath, null)
         if (!abs && currentWorkspaceDir) abs = resolveAssetTarget(rel, currentWorkspaceDir, null)

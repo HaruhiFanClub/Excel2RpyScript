@@ -207,11 +207,15 @@ function hasManifestEntry(manifest: Record<string, string>, name: string): boole
   return Object.prototype.hasOwnProperty.call(manifest, name)
 }
 
+function stemOfAudioName(name: string): string {
+  return name.toLowerCase().replace(/\.wav$/, '')
+}
+
 // 列出任务并标注状态。优先使用带签名的 workspace/pending 清单做精确判断：
 //  pending 目录里有且签名匹配 → generated（临时，可试听）
 //  voice  目录里有且签名匹配 → applied（已落实到 workspace）
 //  带签名但不匹配 → stale（输入已改）
-//  关联工程 game/audio 中已有同名 wav → applied（历史文件通常无签名，按已存在处理）
+//  关联工程资源索引或 game/audio 中已有同名 wav → applied（历史文件通常无签名，按已存在处理）
 //  都没有 → missing
 export async function enrichedJobs(
   xlsxPath: string,
@@ -220,6 +224,7 @@ export async function enrichedJobs(
   pendingDir: string,
   voiceDir: string,
   gameAudioDir?: string | null,
+  projectAudioNames: string[] = [],
 ): Promise<EnrichedJob[]> {
   const jobs = await planJobs(xlsxPath)
   const [pendWavs, voiceWavs, projectWavs, genMan, appMan] = await Promise.all([
@@ -229,23 +234,27 @@ export async function enrichedJobs(
     readManifest(pendingDir, MANIFEST),
     readManifest(voiceDir, APPLIED),
   ])
-  const inPending = new Set(pendWavs)
-  const inVoice = new Set(voiceWavs)
-  const inProject = new Set(projectWavs)
+  const inPending = new Set(pendWavs.map((name) => name.toLowerCase()))
+  const inVoice = new Set(voiceWavs.map((name) => name.toLowerCase()))
+  const inProject = new Set(projectWavs.map((name) => name.toLowerCase()))
+  const projectIndex = new Set(projectAudioNames.map((name) => name.toLowerCase()))
   return jobs.map((j) => {
     const tone = toneFor(cfg, j.voiceCmd)
     const sig = ttsJobSignature(j, cfg, textLang)
     const name = j.outputName
+    const key = name.toLowerCase()
+    const stem = stemOfAudioName(name)
+    const projectHasAudio = inProject.has(key) || projectIndex.has(key) || projectIndex.has(stem)
     let status: EnrichedJob['status']
-    if (inVoice.has(name) && appMan[name] === sig) status = 'applied'
-    else if (inPending.has(name) && genMan[name] === sig) status = 'generated'
+    if (inVoice.has(key) && appMan[name] === sig) status = 'applied'
+    else if (inPending.has(key) && genMan[name] === sig) status = 'generated'
     else if (
-      (inVoice.has(name) && hasManifestEntry(appMan, name)) ||
-      (inPending.has(name) && hasManifestEntry(genMan, name))
+      (inVoice.has(key) && hasManifestEntry(appMan, name)) ||
+      (inPending.has(key) && hasManifestEntry(genMan, name))
     )
       status = 'stale'
-    else if (inProject.has(name) || inVoice.has(name)) status = 'applied'
-    else if (inPending.has(name)) status = 'generated'
+    else if (projectHasAudio || inVoice.has(key)) status = 'applied'
+    else if (inPending.has(key)) status = 'generated'
     else status = 'missing'
     return { ...j, tone, status }
   })
@@ -297,11 +306,47 @@ export async function ttsHealth(
 }
 
 export async function listSynthesized(audioDir: string): Promise<string[]> {
-  try {
-    return (await readdir(audioDir)).filter((f) => f.toLowerCase().endsWith('.wav'))
-  } catch {
-    return []
+  const out: string[] = []
+  async function walk(dir: string): Promise<void> {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) await walk(path)
+      else if (entry.name.toLowerCase().endsWith('.wav')) out.push(entry.name)
+    }
   }
+  await walk(audioDir)
+  return out
+}
+
+export async function resolveSynthesizedFile(audioDir: string, name: string): Promise<string | null> {
+  const target = name.toLowerCase()
+  async function walk(dir: string): Promise<string | null> {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return null
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        const found = await walk(path)
+        if (found) return found
+      } else if (entry.name.toLowerCase() === target) {
+        return path
+      }
+    }
+    return null
+  }
+  return walk(audioDir)
 }
 
 export async function planJobs(xlsxPath: string): Promise<TtsJob[]> {
