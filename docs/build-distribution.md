@@ -27,7 +27,7 @@ release environment 可配置这些 secrets：
 
 不配置 R2 时，发版仍会上传 GitHub Release、GitHub 版 `latest.json` 和剧本空表格模板。
 
-配置 `APPLE_CERTIFICATE` 后，workflow 会要求同时配置一套公证凭据，并在构建后校验 `.app` 的签名、公证票据和 Gatekeeper 评估；DMG 生成后也会单独提交 notarytool、公证、staple 并校验。未配置 `APPLE_CERTIFICATE` 时仍可生成未签名 macOS 包。
+配置 `APPLE_CERTIFICATE` 后，workflow 会要求同时配置一套公证凭据，并在构建后校验 `.app` 的签名、公证票据和 Gatekeeper 评估；DMG 生成后也会单独 codesign、提交 notarytool、公证、staple 并校验。未配置 `APPLE_CERTIFICATE` 时仍可生成未签名 macOS 包。
 
 macOS 推荐使用 App Store Connect API key 公证：
 

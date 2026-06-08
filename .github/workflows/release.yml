@@ -130,6 +130,7 @@ jobs:
             exit 1
           fi
 
+          IDENTITY_LINE=""
           if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
             IDENTITY="$APPLE_SIGNING_IDENTITY"
             if [ "${IDENTITY#*\"}" != "$IDENTITY" ]; then
@@ -142,12 +143,22 @@ jobs:
             IDENTITY="${IDENTITY#Developer ID Installer: }"
             IDENTITY="${IDENTITY#3rd Party Mac Developer Application: }"
             IDENTITY="${IDENTITY#3rd Party Mac Developer Installer: }"
-            if ! printf '%s\n' "$IDENTITIES" | grep -Fq "$IDENTITY"; then
+            IDENTITY_LINE="$(printf '%s\n' "$IDENTITIES" | grep "Developer ID Application:" | grep -F "$IDENTITY" | head -n 1 || true)"
+            if [ -z "$IDENTITY_LINE" ]; then
               echo "APPLE_SIGNING_IDENTITY was not found in the imported certificate." >&2
               exit 1
             fi
             echo "CSC_NAME=$IDENTITY" >> "$GITHUB_ENV"
+          else
+            IDENTITY_LINE="$(printf '%s\n' "$IDENTITIES" | grep "Developer ID Application:" | head -n 1 || true)"
           fi
+
+          CODESIGN_IDENTITY="$(printf '%s\n' "$IDENTITY_LINE" | awk '{print $2}')"
+          if [ -z "$CODESIGN_IDENTITY" ]; then
+            echo "Unable to resolve Developer ID Application identity hash." >&2
+            exit 1
+          fi
+          echo "CODESIGN_IDENTITY=$CODESIGN_IDENTITY" >> "$GITHUB_ENV"
           echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       - name: Validate Apple notarization inputs
@@ -221,6 +232,16 @@ jobs:
             echo "Expected DMG was not produced." >&2
             exit 1
           fi
+          if [ -z "${CODESIGN_IDENTITY:-}" ]; then
+            echo "CODESIGN_IDENTITY is required to sign the DMG." >&2
+            exit 1
+          fi
+
+          codesign --force --sign "$CODESIGN_IDENTITY" \
+            --keychain "$CSC_KEYCHAIN" \
+            --timestamp \
+            "$DMG_PATH"
+          codesign --verify --verbose=2 "$DMG_PATH"
 
           if [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
             xcrun notarytool submit "$DMG_PATH" \
@@ -259,8 +280,6 @@ jobs:
           name: macos-arm64
           path: |
             packages/app/release/*.dmg
-            packages/app/release/*.blockmap
-            packages/app/release/latest*.yml
           if-no-files-found: error
           retention-days: 7
 
