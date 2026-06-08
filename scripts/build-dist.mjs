@@ -33,5 +33,5 @@ sh('pnpm --filter @e2r/app build')
 const extra = existsSync(ttsDir)
   ? `--config.extraResources.0.from=${ttsDir} --config.extraResources.0.to=tts`
   : ''
-sh(`pnpm --filter @e2r/app exec electron-builder --${platform} ${extra}`.trim())
+sh(`pnpm --filter @e2r/app exec electron-builder --${platform} --publish never ${extra}`.trim())
 console.log('\n✓ 分发完成，见 packages/app/release/')

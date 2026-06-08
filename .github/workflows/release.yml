@@ -203,15 +203,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build DMG
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           pnpm --filter @e2r/app build
           if [ -n "${APPLE_CERTIFICATE:-}" ]; then
-            pnpm --filter @e2r/app exec electron-builder --mac --arm64 --config.forceCodeSigning=true
+            pnpm --filter @e2r/app exec electron-builder --mac --arm64 --publish never --config.forceCodeSigning=true
           else
-            pnpm --filter @e2r/app exec electron-builder --mac --arm64
+            pnpm --filter @e2r/app exec electron-builder --mac --arm64 --publish never
           fi
 
       - name: Notarize macOS DMG
@@ -290,11 +288,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build installer and portable zip
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           pnpm --filter @e2r/app build
-          pnpm --filter @e2r/app exec electron-builder --win --x64
+          pnpm --filter @e2r/app exec electron-builder --win --x64 --publish never
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
