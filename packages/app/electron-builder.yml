@@ -22,7 +22,12 @@ mac:
     - dmg
   category: public.app-category.productivity
   artifactName: ${productName}-${version}-${arch}.${ext}
-  # 内置冻结二进制 + dylib 需签名/公证（CI 配置 identity）
+  type: distribution
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  notarize: true
 win:
   icon: build/icon.ico
   target:

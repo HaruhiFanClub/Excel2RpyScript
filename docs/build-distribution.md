@@ -16,15 +16,29 @@ pnpm release 0.1.1
 - `verify`：安装依赖、运行 `pnpm -r test` 与 `pnpm -r typecheck`。
 - `build-macos-arm64`：生成 macOS arm64 DMG。
 - `build-windows-x64`：生成 Windows x64 NSIS 安装包与 zip 免安装包。
-- `publish`：创建 GitHub Release，上传 `latest.json`，可选同步到 R2 并清理 Cloudflare `latest.json` 缓存。
+- `publish`：创建 GitHub Release，上传安装包、免安装包、`latest.json` 和 `assets/release-attachments/` 下的附加文件，可选同步到 R2 并清理 Cloudflare `latest.json` 缓存。
 
 release environment 可配置这些 secrets：
 
-- macOS 签名：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`。
+- macOS 签名与公证：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_API_KEY`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`。
+- macOS 公证备选：`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`。
 - R2 镜像：`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_BUCKET`、`R2_PUBLIC_BASE`。
 - CDN 清理：`CLOUDFLARE_ZONE_ID`、`CLOUDFLARE_API_TOKEN`。
 
-不配置 R2 时，发版仍会上传 GitHub Release 和 GitHub 版 `latest.json`。
+不配置 R2 时，发版仍会上传 GitHub Release、GitHub 版 `latest.json` 和剧本空表格模板。
+
+配置 `APPLE_CERTIFICATE` 后，workflow 会要求同时配置一套公证凭据，并在构建后校验 `.app` 的签名、公证票据和 Gatekeeper 评估；DMG 生成后也会单独提交 notarytool、公证、staple 并校验。未配置 `APPLE_CERTIFICATE` 时仍可生成未签名 macOS 包。
+
+macOS 推荐使用 App Store Connect API key 公证：
+
+- `APPLE_CERTIFICATE`：Developer ID Application `.p12` 的 base64 内容。先在 Keychain Access 导出证书和私钥为 `.p12`，再运行 `base64 < DeveloperID.p12 | pbcopy`。
+- `APPLE_CERTIFICATE_PASSWORD`：导出 `.p12` 时设置的密码。
+- `APPLE_SIGNING_IDENTITY`：可选；`security find-identity -v -p codesigning` 里对应的 Developer ID Application 身份。可以填完整的 `Developer ID Application: ... (TEAMID)`，也可以直接粘贴 `security find-identity` 的整行，workflow 会自动抽取证书名并剥掉前缀。
+- `APPLE_API_KEY`：App Store Connect API key 的 `.p8` 内容，推荐用 `base64 < AuthKey_XXXXXXXXXX.p8 | pbcopy` 后填入；workflow 也接受未 base64 的 PEM 原文。
+- `APPLE_API_KEY_ID`：App Store Connect API key 的 Key ID。
+- `APPLE_API_ISSUER`：App Store Connect API 页面显示的 Issuer ID。创建 key 时选择 Team Key，权限至少需要 App Manager。
+
+不使用 API key 时，可改配 Apple ID 公证三件套：`APPLE_ID` 为 Apple Developer 账号邮箱，`APPLE_APP_SPECIFIC_PASSWORD` 为 appleid.apple.com 创建的 app-specific password，`APPLE_TEAM_ID` 为开发者团队 ID。API key 和 Apple ID 两套不要同时配置。
 
 ## 检查更新
 

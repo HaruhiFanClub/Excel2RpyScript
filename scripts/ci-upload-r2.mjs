@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(here, '..')
 const artifactsDir = path.join(rootDir, 'artifacts')
+const staticReleaseDir = path.join(rootDir, 'assets', 'release-attachments')
 const releaseDir = path.join(rootDir, 'dist-release')
 
 const {
@@ -58,6 +59,7 @@ function shouldUploadAsset(name) {
     lower.endsWith('.dmg') ||
     lower.endsWith('.exe') ||
     lower.endsWith('.zip') ||
+    lower.endsWith('.xlsx') ||
     lower.endsWith('.blockmap') ||
     lower.endsWith('.yml') ||
     lower.endsWith('.yaml')
@@ -73,6 +75,16 @@ for (const file of walkFiles(artifactsDir)) {
     key: name,
     filePath: file,
     cacheControl: 'public, max-age=31536000, immutable',
+  })
+}
+
+for (const file of walkFiles(staticReleaseDir)) {
+  const name = path.basename(file)
+  if (!shouldUploadAsset(name)) continue
+  uploads.push({
+    key: name,
+    filePath: file,
+    cacheControl: 'public, max-age=60, must-revalidate',
   })
 }
 
@@ -104,6 +116,7 @@ function contentType(name) {
   if (lower.endsWith('.dmg')) return 'application/x-apple-diskimage'
   if (lower.endsWith('.exe')) return 'application/vnd.microsoft.portable-executable'
   if (lower.endsWith('.zip')) return 'application/zip'
+  if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'application/yaml'
   return 'application/octet-stream'
 }

@@ -10,6 +10,11 @@
 #
 # release environment 可选 secrets：
 #   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD  macOS Developer ID .p12 base64 与密码
+#   APPLE_SIGNING_IDENTITY                          可选，Developer ID Application identity 名称
+#   APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER
+#                                                    推荐的 App Store Connect API key 公证凭据
+#   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+#                                                    备选 Apple ID 公证凭据
 #   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET / R2_PUBLIC_BASE
 #   CLOUDFLARE_ZONE_ID / CLOUDFLARE_API_TOKEN
 #
@@ -70,10 +75,17 @@ jobs:
     needs: verify
     runs-on: macos-latest
     environment: release
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,6 +106,11 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ github.run_id }}
         run: |
           set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            echo "APPLE_CERTIFICATE_PASSWORD is required when APPLE_CERTIFICATE is configured." >&2
+            exit 1
+          fi
+
           CERT_PATH="$RUNNER_TEMP/build-cert.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
           echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
@@ -102,10 +119,81 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A \
             -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
           security set-key-partition-list -S apple-tool:,apple: -s \
             -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          printf '%s\n' "$IDENTITIES"
+          if ! printf '%s\n' "$IDENTITIES" | grep -q "Developer ID Application:"; then
+            echo "The imported certificate does not contain a valid Developer ID Application identity." >&2
+            exit 1
+          fi
+
+          if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            IDENTITY="$APPLE_SIGNING_IDENTITY"
+            if [ "${IDENTITY#*\"}" != "$IDENTITY" ]; then
+              IDENTITY="${IDENTITY#*\"}"
+              IDENTITY="${IDENTITY%%\"*}"
+            fi
+            IDENTITY="${IDENTITY%\"}"
+            IDENTITY="${IDENTITY#\"}"
+            IDENTITY="${IDENTITY#Developer ID Application: }"
+            IDENTITY="${IDENTITY#Developer ID Installer: }"
+            IDENTITY="${IDENTITY#3rd Party Mac Developer Application: }"
+            IDENTITY="${IDENTITY#3rd Party Mac Developer Installer: }"
+            if ! printf '%s\n' "$IDENTITIES" | grep -Fq "$IDENTITY"; then
+              echo "APPLE_SIGNING_IDENTITY was not found in the imported certificate." >&2
+              exit 1
+            fi
+            echo "CSC_NAME=$IDENTITY" >> "$GITHUB_ENV"
+          fi
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate Apple notarization inputs
+        if: env.APPLE_CERTIFICATE != ''
+        run: |
+          set -euo pipefail
+          HAS_API_KEY=false
+          HAS_APPLE_ID=false
+
+          if [ -n "${APPLE_API_KEY:-}" ] || [ -n "${APPLE_API_KEY_ID:-}" ] || [ -n "${APPLE_API_ISSUER:-}" ]; then
+            if [ -z "${APPLE_API_KEY:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z "${APPLE_API_ISSUER:-}" ]; then
+              echo "APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER must be configured together." >&2
+              exit 1
+            fi
+            HAS_API_KEY=true
+          fi
+
+          if [ -n "${APPLE_ID:-}" ] || [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] || [ -n "${APPLE_TEAM_ID:-}" ]; then
+            if [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
+              echo "APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID must be configured together." >&2
+              exit 1
+            fi
+            HAS_APPLE_ID=true
+          fi
+
+          if [ "$HAS_API_KEY" = "true" ] && [ "$HAS_APPLE_ID" = "true" ]; then
+            echo "Configure either App Store Connect API key notarization or Apple ID notarization, not both." >&2
+            exit 1
+          fi
+          if [ "$HAS_API_KEY" != "true" ] && [ "$HAS_APPLE_ID" != "true" ]; then
+            echo "Notarization credentials are required for signed macOS releases." >&2
+            exit 1
+          fi
+
+      - name: Materialize Apple notarization API key
+        if: env.APPLE_API_KEY != '' && env.APPLE_API_KEY_ID != '' && env.APPLE_API_ISSUER != ''
+        run: |
+          set -euo pipefail
+          API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          if printf '%s' "$APPLE_API_KEY" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$APPLE_API_KEY" > "$API_KEY_PATH"
+          else
+            printf '%s' "$APPLE_API_KEY" | base64 --decode -o "$API_KEY_PATH"
+          fi
+          chmod 600 "$API_KEY_PATH"
+          echo "APPLE_API_KEY=$API_KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Disable signing when no certificate is configured
         if: env.APPLE_CERTIFICATE == ''
@@ -118,8 +206,54 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           pnpm --filter @e2r/app build
-          pnpm --filter @e2r/app exec electron-builder --mac --arm64
+          if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+            pnpm --filter @e2r/app exec electron-builder --mac --arm64 --config.forceCodeSigning=true
+          else
+            pnpm --filter @e2r/app exec electron-builder --mac --arm64
+          fi
+
+      - name: Notarize macOS DMG
+        if: env.APPLE_CERTIFICATE != ''
+        run: |
+          set -euo pipefail
+          DMG_PATH="$(find packages/app/release -name "*.dmg" -type f -print -quit)"
+          if [ -z "$DMG_PATH" ]; then
+            echo "Expected DMG was not produced." >&2
+            exit 1
+          fi
+
+          if [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ]; then
+            xcrun notarytool submit "$DMG_PATH" \
+              --key "$APPLE_API_KEY" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER" \
+              --wait
+          else
+            xcrun notarytool submit "$DMG_PATH" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+          fi
+          xcrun stapler staple "$DMG_PATH"
+
+      - name: Verify macOS signature and notarization
+        if: env.APPLE_CERTIFICATE != ''
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find packages/app/release -name "Excel2Rpy.app" -type d -print -quit)"
+          DMG_PATH="$(find packages/app/release -name "*.dmg" -type f -print -quit)"
+          if [ -z "$APP_PATH" ] || [ -z "$DMG_PATH" ]; then
+            echo "Expected signed app and DMG were not produced." >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type execute --verbose "$APP_PATH"
+          spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -253,6 +387,9 @@ jobs:
             -name "*.blockmap" -o \
             -name "*.yml" \
           \) -exec cp {} release-assets/ \;
+          if [ -d "assets/release-attachments" ]; then
+            find assets/release-attachments -maxdepth 1 -type f -exec cp {} release-assets/ \;
+          fi
           cp dist-release/latest.github.json release-assets/latest.json
           ls -lh release-assets/
 
