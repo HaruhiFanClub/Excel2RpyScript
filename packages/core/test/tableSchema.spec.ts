@@ -132,6 +132,18 @@ describe('表格 schema 兼容', () => {
     expect(files[0]!.content).toContain('voice "阿虚_sheet1_row8_synthesized.wav"')
   })
 
+  it('读取旧表合并表头时不会触发 ExcelJS merged-cell 异常', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'e2r-legacy-merged-header-'))
+    const file = join(dir, 'legacy.xlsx')
+    await writeLegacyFixture(file)
+
+    const table = await readTable(file)
+    const { sheets } = await readWorkbook(file)
+    expect(table.sheets[0]!.schema?.mode).toBe('legacy')
+    expect(table.sheets[0]!.rows[0]!.cells['character']).toBe('kyon 001 left;yuki 002 right')
+    expect(sheets[0]!.schema?.mode).toBe('legacy')
+  })
+
   it('读取新表时按角色配置补齐立绘位置参数', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'e2r-modern-read-cfg-'))
     const file = join(dir, 'modern.xlsx')

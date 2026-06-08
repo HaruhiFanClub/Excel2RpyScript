@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs'
 import { EXCEL_PARSE_START_ROW, EXCEL_PARSE_START_COL } from '../settings/parserSetting'
 import { ElementColNumMapping } from '../settings/converterSetting'
 import { asStr, truthy, EMPTY, type CellValue } from '../parse/cellValue'
-import { readExcelCell } from './readWorkbook'
+import { readExcelCell, readExcelCellText } from './readWorkbook'
 import { TABLE_COLUMNS, type TableData, type TableRow, type TableSheet } from '../tableColumns'
 import {
   detectWorkbookSchema,
@@ -30,7 +30,7 @@ export async function readTable(filePath: string, options: ReadTableOptions = {}
     const readHeader = (r: number): string[] => {
       const row = ws.getRow(r)
       const out: string[] = []
-      for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) out.push(row.getCell(c).text ?? '')
+      for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) out.push(readExcelCellText(row.getCell(c)))
       return out
     }
     const schema: WorkbookSchema = detectWorkbookSchema(readHeader(7), readHeader(6)) ?? LEGACY_SCHEMA

@@ -74,6 +74,15 @@ export function readExcelCell(cell: ExcelJS.Cell, onWarn: () => void = () => {})
   return valueToCell(cell.value, onWarn)
 }
 
+export function readExcelCellText(cell: ExcelJS.Cell): string {
+  if (cell.isMerged && cell.master && cell.master.address !== cell.address) return ''
+  try {
+    return cell.text ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export async function readRawWorkbook(
   filePath: string,
   options: ReadWorkbookOptions = {},
@@ -88,7 +97,7 @@ export async function readRawWorkbook(
     const readHeader = (r: number): string[] => {
       const row = ws.getRow(r)
       const out: string[] = []
-      for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) out.push(row.getCell(c).text ?? '')
+      for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) out.push(readExcelCellText(row.getCell(c)))
       return out
     }
     const schema: WorkbookSchema = detectWorkbookSchema(readHeader(7), readHeader(6)) ?? LEGACY_SCHEMA

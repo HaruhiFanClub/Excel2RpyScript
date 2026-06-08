@@ -3,6 +3,7 @@
 import ExcelJS from 'exceljs'
 import type { ColKey } from '../settings/converterSetting'
 import { EXCEL_PARSE_START_COL, EXCEL_PARSE_START_ROW } from '../settings/parserSetting'
+import { readExcelCellText } from './readWorkbook'
 import {
   characterToModernSprites,
   detectWorkbookSchema,
@@ -52,7 +53,7 @@ function readSheetSchema(ws: ExcelJS.Worksheet): WorkbookSchema {
   const readHeader = (r: number): string[] => {
     const row = ws.getRow(r)
     const out: string[] = []
-    for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) out.push(row.getCell(c).text ?? '')
+    for (let c = 1; c <= EXCEL_PARSE_START_COL; c++) out.push(readExcelCellText(row.getCell(c)))
     return out
   }
   return detectWorkbookSchema(readHeader(7), readHeader(6)) ?? LEGACY_SCHEMA
