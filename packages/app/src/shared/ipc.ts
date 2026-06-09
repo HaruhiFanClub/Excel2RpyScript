@@ -109,6 +109,102 @@ export type TableResult = ({ ok: true } & TableData) | { ok: false; error: strin
 export type SaveResult = { ok: true } | { ok: false; error: string }
 export type SaveAsResult = { ok: true; path: string } | { ok: false; error: string }
 
+export type AudioNormalizeStandard = 'lufs' | 'peak' | 'rms'
+export type AudioNormalizeScope =
+  | 'table-voice'
+  | 'table-music'
+  | 'table-music-voice'
+
+export interface AudioNormalizeArgs {
+  xlsxPath?: string
+  scope: AudioNormalizeScope
+  standard: AudioNormalizeStandard
+  targetLufs?: number
+  truePeakDb?: number
+  lra?: number
+  targetPeakDb?: number
+  targetRmsDb?: number
+  limitDb?: number
+  minGainDb?: number
+  maxGainDb?: number
+  backup?: boolean
+}
+
+export interface AudioNormalizeEntry {
+  filePath: string
+  rel: string
+  size: number
+  ext: string
+  loudnorm?: {
+    inputI: number
+    inputTp: number
+    inputLra: number
+    inputThresh: number
+    targetOffset: number
+  }
+  measuredLufs: number | null
+  measuredPeakDb: number | null
+  measuredRmsDb: number | null
+  gainDb: number | null
+  status: 'ready' | 'skipped' | 'error'
+  reason?: string
+}
+
+export interface AudioNormalizeSummary {
+  total: number
+  ready: number
+  skipped: number
+  error: number
+  avgGainDb: number | null
+  maxGainDb: number | null
+}
+
+export interface AudioNormalizePlan {
+  scopeLabel: string
+  ffmpegPath: string | null
+  entries: AudioNormalizeEntry[]
+  summary: AudioNormalizeSummary
+}
+
+export type AudioNormalizePlanResult =
+  | ({ ok: true } & AudioNormalizePlan)
+  | { ok: false; error: string; ffmpegPath?: string | null }
+export type AudioNormalizeApplyResult =
+  | ({ ok: true; processed: number; failed: number; entries: AudioNormalizeEntry[] })
+  | { ok: false; error: string }
+
+export interface AudioNormalizeProgress {
+  phase: 'analyze' | 'apply'
+  index: number
+  total: number
+  rel: string
+  status: 'running' | 'done' | 'error' | 'skipped'
+  error?: string
+}
+
+export interface ProjectMissingRef {
+  kind: 'image' | 'audio'
+  name: string
+  source: string
+  sheet: string
+  row: number
+}
+
+export interface ProjectUnusedAsset {
+  kind: 'image' | 'audio'
+  rel: string
+}
+
+export interface ProjectAuditReport {
+  referenced: { images: number; audio: number }
+  missing: ProjectMissingRef[]
+  unused: ProjectUnusedAsset[]
+}
+
+export type ProjectAuditResult =
+  | ({ ok: true } & ProjectAuditReport)
+  | { ok: false; error: string }
+
 export interface CheckSummary {
   error: number
   warn: number
@@ -165,6 +261,10 @@ export interface E2rApi {
   diff(oldPath: string, newPath: string): Promise<DiffResult>
   linkProject(dir: string): Promise<ProjectResult>
   clearProject(): Promise<void>
+  projectAudioNormalizePlan(args: AudioNormalizeArgs): Promise<AudioNormalizePlanResult>
+  projectAudioNormalizeApply(args: AudioNormalizeArgs): Promise<AudioNormalizeApplyResult>
+  onAudioNormalizeProgress(cb: (p: AudioNormalizeProgress) => void): () => void
+  projectAudit(xlsxPath: string): Promise<ProjectAuditResult>
   importAsset(kind: WsAssetType, name: string, xlsxPath: string): Promise<AssetImportResult>
   ttsCharacters(): Promise<TtsConfig>
   ttsSaveCharacters(config: TtsConfig): Promise<SaveResult>

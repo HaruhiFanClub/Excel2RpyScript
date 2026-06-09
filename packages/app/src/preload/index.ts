@@ -31,6 +31,11 @@ import type {
   TtsProgress,
   TtsSynthArgs,
   TtsSynthSummary,
+  AudioNormalizeArgs,
+  AudioNormalizePlanResult,
+  AudioNormalizeApplyResult,
+  AudioNormalizeProgress,
+  ProjectAuditResult,
 } from '../shared/ipc'
 
 const demoArg = process.argv.find((a) => a.startsWith('--e2r-demo='))
@@ -64,6 +69,17 @@ const api: E2rApi = {
     ipcRenderer.invoke('diff', oldPath, newPath),
   linkProject: (dir: string): Promise<ProjectResult> => ipcRenderer.invoke('project:link', dir),
   clearProject: (): Promise<void> => ipcRenderer.invoke('project:clear'),
+  projectAudioNormalizePlan: (args: AudioNormalizeArgs): Promise<AudioNormalizePlanResult> =>
+    ipcRenderer.invoke('project:audioNormalizePlan', args),
+  projectAudioNormalizeApply: (args: AudioNormalizeArgs): Promise<AudioNormalizeApplyResult> =>
+    ipcRenderer.invoke('project:audioNormalizeApply', args),
+  onAudioNormalizeProgress: (cb: (p: AudioNormalizeProgress) => void): (() => void) => {
+    const handler = (_e: unknown, p: AudioNormalizeProgress) => cb(p)
+    ipcRenderer.on('project:audioNormalizeProgress', handler)
+    return () => ipcRenderer.removeListener('project:audioNormalizeProgress', handler)
+  },
+  projectAudit: (xlsxPath: string): Promise<ProjectAuditResult> =>
+    ipcRenderer.invoke('project:audit', xlsxPath),
   importAsset: (kind: WsAssetType, name: string, xlsxPath: string): Promise<AssetImportResult> =>
     ipcRenderer.invoke('asset:import', kind, name, xlsxPath),
   ttsCharacters: (): Promise<TtsConfig> => ipcRenderer.invoke('tts:characters'),

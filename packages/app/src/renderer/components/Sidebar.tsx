@@ -3,6 +3,7 @@ import {
   TableProperties,
   AudioLines,
   Users,
+  FolderCog,
   ClipboardCheck,
   Moon,
   Sun,
@@ -14,7 +15,7 @@ import { useThemeStore } from '../stores/useThemeStore'
 import appIcon from '../assets/app-icon.png'
 import appPackage from '../../../package.json'
 
-export type PageId = 'convert' | 'table' | 'tts' | 'characters' | 'check'
+export type PageId = 'convert' | 'table' | 'tts' | 'characters' | 'project' | 'check'
 
 interface NavItem {
   id: PageId
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { id: 'table', label: '表格', icon: TableProperties },
   { id: 'tts', label: '语音合成', icon: AudioLines },
   { id: 'characters', label: '角色配置', icon: Users },
+  { id: 'project', label: '工程', icon: FolderCog },
   { id: 'check', label: '检查', icon: ClipboardCheck },
 ]
 

@@ -21,6 +21,11 @@ import { engineStart, engineStop, engineStatus } from './ttsServer'
 import { validateFormat } from './format'
 import { checkForUpdates } from './update'
 import {
+  applyAudioNormalization,
+  auditProjectResources,
+  buildAudioNormalizePlan,
+} from './projectAudio'
+import {
   readTable,
   saveTableChanges,
   readWorkbook,
@@ -34,6 +39,7 @@ import {
   resolveAssetTarget,
   planTtsAudioRenames,
   spritePositionsFromConfig,
+  type AssetIndex,
   type AssetMaps,
   type TableChange,
   type TtsConfig,
@@ -67,6 +73,10 @@ import type {
   RpyFile,
   RpyFileWriteResult,
   WorkspaceImportResult,
+  AudioNormalizeArgs,
+  AudioNormalizePlanResult,
+  AudioNormalizeApplyResult,
+  ProjectAuditResult,
 } from '../shared/ipc'
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -79,6 +89,7 @@ protocol.registerSchemesAsPrivileged([
 let linkedGamePath: string | null = null
 let linkedTransforms: string[] = []
 let linkedAudioNames: string[] = []
+let linkedProjectIndex: AssetIndex | null = null
 let currentWorkspaceDir: string | null = null
 let currentPendingDir: string | null = null // 当前表的临时语音目录（已生成、可试听）
 let currentVoiceDir: string | null = null // 当前表的已应用语音目录（workspace/<表>/voice）
@@ -400,6 +411,7 @@ function registerIpc(): void {
       linkedGamePath = gamePath
       linkedTransforms = index.transforms
       linkedAudioNames = Object.keys(index.audio)
+      linkedProjectIndex = index
       return { ok: true, ...index }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -409,6 +421,42 @@ function registerIpc(): void {
     linkedGamePath = null
     linkedTransforms = []
     linkedAudioNames = []
+    linkedProjectIndex = null
+  })
+
+  ipcMain.handle('project:audioNormalizePlan', async (e, args: AudioNormalizeArgs): Promise<AudioNormalizePlanResult> => {
+    try {
+      const plan = await buildAudioNormalizePlan(args, linkedGamePath, linkedProjectIndex, (p) =>
+        e.sender.send('project:audioNormalizeProgress', p),
+      )
+      return { ok: true, ...plan }
+    } catch (err) {
+      return { ok: false, error: errMsg(err) }
+    }
+  })
+
+  ipcMain.handle('project:audioNormalizeApply', async (e, args: AudioNormalizeArgs): Promise<AudioNormalizeApplyResult> => {
+    try {
+      const result = await applyAudioNormalization(args, linkedGamePath, linkedProjectIndex, (p) =>
+        e.sender.send('project:audioNormalizeProgress', p),
+      )
+      if (linkedGamePath) {
+        linkedProjectIndex = await scanRenpyAssets(linkedGamePath)
+        linkedTransforms = linkedProjectIndex.transforms
+        linkedAudioNames = Object.keys(linkedProjectIndex.audio)
+      }
+      return { ok: true, ...result }
+    } catch (err) {
+      return { ok: false, error: errMsg(err) }
+    }
+  })
+
+  ipcMain.handle('project:audit', async (_e, xlsxPath: string): Promise<ProjectAuditResult> => {
+    try {
+      return { ok: true, ...(await auditProjectResources(xlsxPath, linkedProjectIndex)) }
+    } catch (err) {
+      return { ok: false, error: errMsg(err) }
+    }
   })
 
   // 从表格导入/替换资源：始终复制到当前工作簿 workspace；
@@ -442,6 +490,7 @@ function registerIpc(): void {
           project = await scanRenpyAssets(linkedGamePath)
           linkedTransforms = project.transforms
           linkedAudioNames = Object.keys(project.audio)
+          linkedProjectIndex = project
         }
         const workspace = await scanWorkspaceAssets(workspaceDir)
         return {

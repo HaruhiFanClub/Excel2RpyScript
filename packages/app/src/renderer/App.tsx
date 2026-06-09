@@ -6,13 +6,14 @@ import TablePage from './pages/TablePage'
 import CheckPage from './pages/CheckPage'
 import TtsPage from './pages/TtsPage'
 import CharactersPage from './pages/CharactersPage'
+import ProjectPage from './pages/ProjectPage'
 import { WorkspaceBar } from './components/WorkspaceBar'
 import { UpdateDialog } from './components/UpdateDialog'
 import { useWorkspaceStore } from './stores/useWorkspaceStore'
 import { useCharactersStore } from './stores/useCharactersStore'
 import type { UpdateCheckResult } from '../shared/ipc'
 
-const PAGES: PageId[] = ['convert', 'table', 'tts', 'characters', 'check']
+const PAGES: PageId[] = ['convert', 'table', 'tts', 'characters', 'project', 'check']
 
 export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
@@ -106,12 +107,13 @@ export function App(): JSX.Element {
                   >
                     <div
                       className={`mx-auto h-full px-8 pb-7 pt-6 ${
-                        page === 'tts' ? 'max-w-none' : 'max-w-5xl'
+                        page === 'tts' || page === 'project' ? 'max-w-none' : 'max-w-5xl'
                       }`}
                     >
                       {page === 'convert' && <ConvertPage />}
                       {page === 'tts' && <TtsPage />}
                       {page === 'characters' && <CharactersPage />}
+                      {page === 'project' && <ProjectPage />}
                       {page === 'check' && <CheckPage />}
                     </div>
                   </motion.div>
