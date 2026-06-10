@@ -416,7 +416,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         if (!workbookPath || !sheetName) return
         set((state) => ({
           tableActiveSheetByWorkbook: {
-            ...state.tableActiveSheetByWorkbook,
+            ...(state.tableActiveSheetByWorkbook ?? {}),
             [workbookPath]: sheetName,
           },
         }))
@@ -425,7 +425,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         if (!workbookPath) return
         set((state) => ({
           ttsActiveSheetByWorkbook: {
-            ...state.ttsActiveSheetByWorkbook,
+            ...(state.ttsActiveSheetByWorkbook ?? {}),
             [workbookPath]: sheetKey,
           },
         }))
@@ -436,7 +436,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         if (!key) return
         set((state) => ({
           ttsScrollByWorkbookSheet: {
-            ...state.ttsScrollByWorkbookSheet,
+            ...(state.ttsScrollByWorkbookSheet ?? {}),
             [key]: position,
           },
         }))
@@ -444,13 +444,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       markTtsRowsModified: (workbookPath, rows) => {
         if (!workbookPath || rows.length === 0) return
         set((state) => {
-          const current = state.ttsModifiedRowsByWorkbook[workbookPath] ?? {}
+          const byWorkbook = state.ttsModifiedRowsByWorkbook ?? {}
+          const current = byWorkbook[workbookPath] ?? {}
           const next = { ...current }
           const now = Date.now()
           for (const row of rows) next[ttsRowKey(row.sheetName, row.excelRow)] = now
           return {
             ttsModifiedRowsByWorkbook: {
-              ...state.ttsModifiedRowsByWorkbook,
+              ...byWorkbook,
               [workbookPath]: next,
             },
           }
@@ -459,9 +460,10 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       clearTtsRowsModified: (workbookPath, rows) => {
         if (!workbookPath) return
         set((state) => {
-          const current = state.ttsModifiedRowsByWorkbook[workbookPath] ?? {}
+          const byWorkbook = state.ttsModifiedRowsByWorkbook ?? {}
+          const current = byWorkbook[workbookPath] ?? {}
           if (!rows) {
-            const rest = { ...state.ttsModifiedRowsByWorkbook }
+            const rest = { ...byWorkbook }
             delete rest[workbookPath]
             return { ttsModifiedRowsByWorkbook: rest }
           }
@@ -469,7 +471,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           for (const row of rows) delete next[ttsRowKey(row.sheetName, row.excelRow)]
           return {
             ttsModifiedRowsByWorkbook: {
-              ...state.ttsModifiedRowsByWorkbook,
+              ...byWorkbook,
               [workbookPath]: next,
             },
           }

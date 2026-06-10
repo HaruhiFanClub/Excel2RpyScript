@@ -115,6 +115,63 @@ body {
   background: rgb(100 116 139 / 0.45);
 }
 
+.e2r-grid-panel {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+  transition:
+    border-radius 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease,
+    opacity 0.16s ease,
+    transform 0.2s ease;
+}
+
+.e2r-grid-panel-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--app-border);
+  padding: 0.45rem 0.75rem;
+  background: color-mix(in srgb, var(--app-text) 2.5%, transparent);
+}
+
+.e2r-grid-panel-fullscreen {
+  position: fixed !important;
+  inset: 28px 20px 20px !important;
+  z-index: 120;
+  box-sizing: border-box;
+  padding: 0.85rem;
+  border-color: var(--app-border) !important;
+  border-radius: 16px !important;
+  background: var(--app-bg);
+  box-shadow: 0 24px 80px -24px rgb(15 23 42 / 0.45);
+  animation: e2r-grid-fullscreen-in 0.18s ease-out;
+}
+
+.e2r-grid-panel-fullscreen .e2r-grid-panel-toolbar {
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: 0.75rem;
+  background: var(--app-surface);
+}
+
+@keyframes e2r-grid-fullscreen-in {
+  from {
+    opacity: 0.88;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* ---------- 代码预览 ---------- */
 .code-block {
   font-family: var(--font-mono);
@@ -181,6 +238,47 @@ body {
   min-height: 140px;
   padding: 10px 12px !important;
   line-height: 1.55;
+}
+
+.e2r-tts-text-cell {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.e2r-tts-text-cell-expanded {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: calc(100% - 10px);
+  min-height: 0;
+  margin: 5px 0;
+  padding: 11px 13px;
+  overflow: visible;
+  border: 1px solid rgb(14 165 233 / 0.36);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.96);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.55),
+    0 0 0 2px rgb(14 165 233 / 0.09),
+    0 10px 22px -20px rgb(15 23 42 / 0.42);
+  color: var(--app-text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dark .e2r-tts-text-cell-expanded {
+  background: rgb(15 23 42 / 0.96);
+  border-color: rgb(56 189 248 / 0.34);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.06),
+    0 0 0 2px rgb(56 189 248 / 0.11),
+    0 14px 30px -22px rgb(0 0 0 / 0.85);
 }
 
 /* ---------- 表格下拉（角色 / 语音指令）：选中或悬浮单元格才显示下拉按钮 ---------- */

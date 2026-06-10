@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AgGridReact } from 'ag-grid-react'
 import type { CustomCellRendererProps } from 'ag-grid-react'
 import {
@@ -10,7 +11,7 @@ import {
   type GridApi,
   type GridReadyEvent,
 } from 'ag-grid-community'
-import { Download, FileSpreadsheet, Plus, Save, RotateCcw, Trash2, X } from 'lucide-react'
+import { Download, FileSpreadsheet, Maximize2, Minimize2, Plus, Save, RotateCcw, Trash2, X } from 'lucide-react'
 import { TABLE_COLUMNS, type TableRow } from '@e2r/core/table'
 import { parseSprites, serializeSprites } from '@e2r/core/sprites'
 import { spritePositionsFromConfig } from '@e2r/core/tts'
@@ -173,7 +174,7 @@ export default function TablePage({
   const tableError = useWorkspaceStore((s) => s.tableError)
   const loadTableData = useWorkspaceStore((s) => s.loadTableData)
   const applyTableRowOpsToCache = useWorkspaceStore((s) => s.applyTableRowOpsToCache)
-  const savedActiveSheetName = useWorkspaceStore((s) => s.tableActiveSheetByWorkbook[s.workbookPath] ?? '')
+  const savedActiveSheetName = useWorkspaceStore((s) => (s.tableActiveSheetByWorkbook ?? {})[s.workbookPath] ?? '')
   const setTableActiveSheet = useWorkspaceStore((s) => s.setTableActiveSheet)
   const markTtsRowsModified = useWorkspaceStore((s) => s.markTtsRowsModified)
   const requestTtsLocate = useWorkspaceStore((s) => s.requestTtsLocate)
@@ -195,6 +196,7 @@ export default function TablePage({
   const [status, setStatus] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [selectedRow, setSelectedRow] = useState<{ sheet: string; excelRow: number } | null>(null)
+  const [gridFullscreen, setGridFullscreen] = useState(false)
 
   const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null)
   const [audio, setAudio] = useState<{ url: string; title: string } | null>(null)
@@ -221,6 +223,7 @@ export default function TablePage({
     setLocalError(null)
     setStatus(null)
     setImagePreview(null)
+    setGridFullscreen(false)
   }, [workbookPath])
 
   useEffect(() => {
@@ -775,6 +778,59 @@ export default function TablePage({
   }, [loadTableData, workbookPath])
 
   const selectedExcelRow = sheet && selectedRow?.sheet === sheet.name ? selectedRow.excelRow : null
+  const gridPanel = (
+    <section className={`glass-card e2r-grid-panel ${gridFullscreen ? 'e2r-grid-panel-fullscreen' : 'flex-1'}`}>
+      <div className="e2r-grid-panel-toolbar">
+        <span className="min-w-0 truncate text-[12px] text-app-muted">
+          表格编辑
+          {sheet && (
+            <>
+              <span className="mx-2 text-app-muted/60">/</span>
+              <span className="font-medium text-app-text">{sheet.name}</span>
+              <span className="ml-2">共 {sheet.rows.length} 行</span>
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={() => setGridFullscreen((v) => !v)}
+          disabled={!sheet}
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-app-text transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
+          title={gridFullscreen ? '退出全屏' : '全屏编辑'}
+        >
+          {gridFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          {gridFullscreen ? '退出全屏' : '全屏'}
+        </button>
+      </div>
+      {sheet && sheet.rows.length > 0 ? (
+        <div ref={gridShell} className="h-full min-h-0 w-full flex-1">
+          <AgGridReact<Row>
+            theme={appGridTheme}
+            context={context}
+            columnDefs={columnDefs}
+            defaultColDef={defaultColDef}
+            getRowId={getRowId}
+            rowData={rowData}
+            quickFilterText={query}
+            onGridReady={onGridReady}
+            onCellClicked={onCellClicked}
+            onCellFocused={onCellFocused}
+            onCellValueChanged={onCellValueChanged}
+            onBodyScroll={() => setImagePreview(null)}
+            stopEditingWhenCellsLoseFocus
+            animateRows={false}
+          />
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-10 text-app-muted">
+          <FileSpreadsheet size={36} strokeWidth={1.2} />
+          <p className="text-[13px]">
+            {loading ? '读取中…' : shownError ? `读取失败：${shownError}` : '选择工作簿以浏览与编辑剧本数据'}
+          </p>
+        </div>
+      )}
+    </section>
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -867,35 +923,7 @@ export default function TablePage({
         </div>
       )}
 
-      <section className="glass-card relative min-h-0 flex-1 overflow-hidden">
-        {sheet && sheet.rows.length > 0 ? (
-          <div ref={gridShell} className="h-full w-full">
-            <AgGridReact<Row>
-              theme={appGridTheme}
-              context={context}
-              columnDefs={columnDefs}
-              defaultColDef={defaultColDef}
-              getRowId={getRowId}
-              rowData={rowData}
-              quickFilterText={query}
-              onGridReady={onGridReady}
-              onCellClicked={onCellClicked}
-              onCellFocused={onCellFocused}
-              onCellValueChanged={onCellValueChanged}
-              onBodyScroll={() => setImagePreview(null)}
-              stopEditingWhenCellsLoseFocus
-              animateRows={false}
-            />
-          </div>
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-app-muted">
-            <FileSpreadsheet size={36} strokeWidth={1.2} />
-            <p className="text-[13px]">
-              {loading ? '读取中…' : shownError ? `读取失败：${shownError}` : '选择工作簿以浏览与编辑剧本数据'}
-            </p>
-          </div>
-        )}
-      </section>
+      {gridFullscreen ? createPortal(gridPanel, document.body) : gridPanel}
 
       {imagePreview && <ImageSidePreview preview={imagePreview} onClose={() => setImagePreview(null)} />}
 

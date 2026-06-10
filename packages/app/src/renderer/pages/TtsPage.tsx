@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AgGridReact } from 'ag-grid-react'
 import type { CustomCellRendererProps } from 'ag-grid-react'
 import {
   type CellClickedEvent,
+  type CellFocusedEvent,
   type CellValueChangedEvent,
   type ColDef,
+  type ColumnResizedEvent,
   type GetRowIdParams,
   type GridApi,
   type GridReadyEvent,
@@ -21,6 +24,8 @@ import {
   CircleCheck,
   CircleDashed,
   CircleAlert,
+  Maximize2,
+  Minimize2,
   X,
 } from 'lucide-react'
 import type { EnrichedJob, TtsProgress } from '../../shared/ipc'
@@ -42,6 +47,10 @@ const LANGS: [string, string][] = [
   ['韩文', 'all_ko'],
 ]
 
+const EMPTY_SCROLL_BY_WORKBOOK_SHEET: Record<string, { top: number; left: number }> = {}
+const EMPTY_MODIFIED_ROWS_BY_WORKBOOK: Record<string, Record<string, number>> = {}
+const EMPTY_MODIFIED_ROWS: Record<string, number> = {}
+
 type RunState = 'running' | 'done' | 'error'
 type TtsRow = {
   line: number
@@ -55,11 +64,13 @@ type TtsRow = {
   busy: boolean
   playing: boolean
   playbackPaused: boolean
+  expandedTextField?: TtsTextField
   __job: EnrichedJob
 }
 
 type TtsInputField = 'voice_cmd' | 'voice_text'
-type TextPreview = { title: string; text: string }
+type TtsTextField = 'dialogue_text' | 'voice_text'
+type ExpandedTextCell = { outputName: string; field: TtsTextField; width: number }
 
 interface TtsGridContext extends GridContext {
   onAudition: (job: EnrichedJob) => void
@@ -76,6 +87,10 @@ function isTtsInputField(field: string | undefined): field is TtsInputField {
   return field === 'voice_cmd' || field === 'voice_text'
 }
 
+function isTtsTextField(field: string | undefined): field is TtsTextField {
+  return field === 'dialogue_text' || field === 'voice_text'
+}
+
 function effectiveStatus(job: EnrichedJob, modifiedRows: Record<string, number>): EnrichedJob['status'] {
   if (job.status !== 'missing' && job.statusTracked === false && modifiedRows[ttsRowKey(job.sheetName, job.excelRow)]) {
     return 'stale'
@@ -87,6 +102,24 @@ function gridScrollElements(root: HTMLElement | null): { body: HTMLElement | nul
   const body = root?.querySelector<HTMLElement>('.ag-body-viewport') ?? null
   const horizontal = root?.querySelector<HTMLElement>('.ag-body-horizontal-scroll-viewport') ?? body
   return { body, horizontal }
+}
+
+function weightedTextLength(text: string): number {
+  let length = 0
+  for (const char of text) length += /[\u0000-\u00ff]/.test(char) ? 0.55 : 1
+  return length
+}
+
+function textLineCount(text: string, columnWidth: number): number {
+  const usableWidth = Math.max(120, columnWidth - 32)
+  const charsPerLine = Math.max(10, Math.floor(usableWidth / 13))
+  return text
+    .split(/\r\n|\r|\n/)
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(weightedTextLength(line) / charsPerLine)), 0)
+}
+
+function expandedTextRowHeight(text: string, columnWidth: number): number {
+  return Math.max(96, 50 + textLineCount(text, columnWidth) * 24)
 }
 
 function TtsRowNumberCell(p: CustomCellRendererProps<TtsRow>) {
@@ -110,6 +143,17 @@ function TtsRowNumberCell(p: CustomCellRendererProps<TtsRow>) {
   )
 }
 
+function TtsTextCell(p: CustomCellRendererProps<TtsRow>) {
+  const field = p.colDef?.field
+  const expanded = isTtsTextField(field) && p.data?.expandedTextField === field
+  const value = String(p.value ?? '')
+  return (
+    <div className={`e2r-tts-text-cell ${expanded ? 'e2r-tts-text-cell-expanded' : ''}`}>
+      {value || <span className="text-app-muted/45">—</span>}
+    </div>
+  )
+}
+
 export default function TtsPage({
   active: pageActive = true,
   onOpenTable,
@@ -127,11 +171,15 @@ export default function TtsPage({
   const promptLang = useWorkspaceStore((s) => s.ttsPromptLang)
   const setTextLang = useWorkspaceStore((s) => s.setTtsTextLang)
   const setPromptLang = useWorkspaceStore((s) => s.setTtsPromptLang)
-  const savedActiveSheetKey = useWorkspaceStore((s) => s.ttsActiveSheetByWorkbook[s.workbookPath] ?? '')
+  const savedActiveSheetKey = useWorkspaceStore((s) => (s.ttsActiveSheetByWorkbook ?? {})[s.workbookPath] ?? '')
   const setStoredActiveSheet = useWorkspaceStore((s) => s.setTtsActiveSheet)
-  const ttsScrollByWorkbookSheet = useWorkspaceStore((s) => s.ttsScrollByWorkbookSheet)
+  const ttsScrollByWorkbookSheet = useWorkspaceStore(
+    (s) => s.ttsScrollByWorkbookSheet ?? EMPTY_SCROLL_BY_WORKBOOK_SHEET,
+  )
   const setTtsScrollPosition = useWorkspaceStore((s) => s.setTtsScrollPosition)
-  const modifiedRows = useWorkspaceStore((s) => s.ttsModifiedRowsByWorkbook[s.workbookPath] ?? {})
+  const modifiedRows = useWorkspaceStore(
+    (s) => (s.ttsModifiedRowsByWorkbook ?? EMPTY_MODIFIED_ROWS_BY_WORKBOOK)[s.workbookPath] ?? EMPTY_MODIFIED_ROWS,
+  )
   const markTtsRowsModified = useWorkspaceStore((s) => s.markTtsRowsModified)
   const clearTtsRowsModified = useWorkspaceStore((s) => s.clearTtsRowsModified)
   const requestTableLocate = useWorkspaceStore((s) => s.requestTableLocate)
@@ -148,14 +196,17 @@ export default function TtsPage({
   const [progress, setProgress] = useState<Record<string, RunState>>({})
   const [audio, setAudio] = useState<{ url: string; title: string; outputName: string } | null>(null)
   const [audioPaused, setAudioPaused] = useState(true)
+  const [gridFullscreen, setGridFullscreen] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const gridApi = useRef<GridApi<TtsRow> | null>(null)
   const gridShell = useRef<HTMLDivElement>(null)
   const scrollFrame = useRef<number | null>(null)
+  const rowHeightFrame = useRef<number | null>(null)
+  const lastExpandedTextCell = useRef<ExpandedTextCell | null>(null)
   const lastSeenTableRevision = useRef(tableDataRevision)
   const lastRestoredScrollKey = useRef('')
   const [activeSheetKey, setActiveSheetKey] = useState(savedActiveSheetKey)
-  const [expandedText, setExpandedText] = useState<TextPreview | null>(null)
+  const [expandedTextCell, setExpandedTextCell] = useState<ExpandedTextCell | null>(null)
 
   // 启用角色分类：远端（自带模型/端点）/ 内嵌（本地引擎 zero-shot）
   const roleEntries = config ? Object.entries(config.roleModelMapping) : []
@@ -353,7 +404,7 @@ export default function TtsPage({
 
   useEffect(() => {
     setActiveSheetKey(savedActiveSheetKey)
-    setExpandedText(null)
+    setExpandedTextCell(null)
     lastRestoredScrollKey.current = ''
   }, [workbookPath])
 
@@ -383,7 +434,7 @@ export default function TtsPage({
   const selectSheet = useCallback(
     (key: string) => {
       setActiveSheetKey(key)
-      setExpandedText(null)
+      setExpandedTextCell(null)
       if (workbookPath) setStoredActiveSheet(workbookPath, key)
     },
     [setStoredActiveSheet, workbookPath],
@@ -414,6 +465,7 @@ export default function TtsPage({
   useEffect(() => {
     return () => {
       if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current)
+      if (rowHeightFrame.current !== null) window.cancelAnimationFrame(rowHeightFrame.current)
     }
   }, [])
 
@@ -468,6 +520,7 @@ export default function TtsPage({
         minWidth: 220,
         flex: 1.15,
         editable: false,
+        cellRenderer: TtsTextCell,
       },
       {
         headerName: '语音文本',
@@ -476,6 +529,7 @@ export default function TtsPage({
         minWidth: 220,
         flex: 1,
         editable: true,
+        cellRenderer: TtsTextCell,
         cellEditor: 'agLargeTextCellEditor',
         cellEditorPopup: true,
       },
@@ -514,10 +568,70 @@ export default function TtsPage({
         busy,
         playing: audio?.outputName === job.outputName,
         playbackPaused: audioPaused,
+        expandedTextField:
+          expandedTextCell?.outputName === job.outputName ? expandedTextCell.field : undefined,
         __job: job,
       })),
-    [activeJobs, audio?.outputName, audioPaused, busy, modifiedRows, progress],
+    [activeJobs, audio?.outputName, audioPaused, busy, expandedTextCell, modifiedRows, progress],
   )
+
+  const expandedTextValue = useMemo(() => {
+    if (!expandedTextCell) return ''
+    const row = rowData.find((item) => item.outputName === expandedTextCell.outputName)
+    return row ? String(row[expandedTextCell.field] ?? '') : ''
+  }, [expandedTextCell, rowData])
+
+  useEffect(() => {
+    const api = gridApi.current
+    if (!api) {
+      lastExpandedTextCell.current = expandedTextCell
+      return
+    }
+    if (rowHeightFrame.current !== null) window.cancelAnimationFrame(rowHeightFrame.current)
+    const previous = lastExpandedTextCell.current
+    lastExpandedTextCell.current = expandedTextCell
+    rowHeightFrame.current = window.requestAnimationFrame(() => {
+      rowHeightFrame.current = null
+      const { body, horizontal } = gridScrollElements(gridShell.current)
+      const top = body?.scrollTop ?? 0
+      const left = horizontal?.scrollLeft ?? body?.scrollLeft ?? 0
+
+      const affectedNodes = []
+      if (previous && previous.outputName !== expandedTextCell?.outputName) {
+        const previousNode = api.getRowNode(previous.outputName)
+        if (previousNode) {
+          previousNode.setRowHeight(null)
+          affectedNodes.push(previousNode)
+        }
+      }
+
+      if (expandedTextCell) {
+        const currentNode = api.getRowNode(expandedTextCell.outputName)
+        if (currentNode) {
+          currentNode.setRowHeight(expandedTextRowHeight(expandedTextValue, expandedTextCell.width))
+          affectedNodes.push(currentNode)
+        }
+      }
+
+      if (affectedNodes.length) {
+        api.onRowHeightChanged()
+        api.refreshCells({ force: true, rowNodes: affectedNodes })
+      }
+
+      window.requestAnimationFrame(() => {
+        const next = gridScrollElements(gridShell.current)
+        if (next.body) next.body.scrollTop = top
+        if (next.horizontal) next.horizontal.scrollLeft = left
+        else if (next.body) next.body.scrollLeft = left
+      })
+    })
+    return () => {
+      if (rowHeightFrame.current !== null) {
+        window.cancelAnimationFrame(rowHeightFrame.current)
+        rowHeightFrame.current = null
+      }
+    }
+  }, [expandedTextCell, expandedTextValue])
 
   useEffect(() => {
     if (!pageActive || !activeScrollKey) return
@@ -582,17 +696,50 @@ export default function TtsPage({
     workbookPath,
   ])
 
-  const onCellClicked = useCallback((e: CellClickedEvent<TtsRow>) => {
-    if (!e.data) return
-    const field = e.colDef.field
-    if (field !== 'dialogue_text' && field !== 'voice_text') {
-      setExpandedText(null)
+  const expandTextCell = useCallback((row: TtsRow | undefined, field: string | undefined, width: number) => {
+    if (!row || !isTtsTextField(field)) {
+      setExpandedTextCell(null)
       return
     }
-    const label = field === 'dialogue_text' ? '台词' : '语音文本'
-    setExpandedText({
-      title: `${label} · ${e.data.role_name} · Excel 第 ${e.data.line} 行`,
-      text: String(e.value ?? ''),
+    setExpandedTextCell((current) => {
+      if (current?.outputName === row.outputName && current.field === field && current.width === width) {
+        return current
+      }
+      return { outputName: row.outputName, field, width }
+    })
+  }, [])
+
+  const onCellClicked = useCallback(
+    (e: CellClickedEvent<TtsRow>) => {
+      expandTextCell(e.data, e.colDef.field, e.column.getActualWidth())
+    },
+    [expandTextCell],
+  )
+
+  const onCellFocused = useCallback(
+    (e: CellFocusedEvent<TtsRow>) => {
+      const rowIndex = e.rowIndex
+      const field = typeof e.column === 'string' ? e.column : e.column?.getColId()
+      const width = typeof e.column === 'string' ? 320 : (e.column?.getActualWidth() ?? 320)
+      const row = rowIndex == null ? undefined : e.api.getDisplayedRowAtIndex(rowIndex)?.data
+      expandTextCell(row, field, width)
+    },
+    [expandTextCell],
+  )
+
+  const onColumnResized = useCallback((e: ColumnResizedEvent<TtsRow>) => {
+    if (!e.finished) return
+    setExpandedTextCell((current) => {
+      if (!current) return current
+      const resizedColumns = [
+        ...(e.column ? [e.column] : []),
+        ...(e.columns ?? []),
+        ...(e.flexColumns ?? []),
+      ]
+      const column = resizedColumns.find((col) => col.getColId() === current.field)
+      if (!column) return current
+      const width = column.getActualWidth()
+      return width === current.width ? current : { ...current, width }
     })
   }, [])
 
@@ -618,6 +765,60 @@ export default function TtsPage({
       }
     },
     [applyTableEditsToCache, markSheetChanges, markTtsRowsModified, workbookPath, refresh],
+  )
+
+  const gridPanel = (
+    <section className={`glass-card e2r-grid-panel ${gridFullscreen ? 'e2r-grid-panel-fullscreen' : 'flex-1'}`}>
+      <div className="e2r-grid-panel-toolbar">
+        <span className="min-w-0 truncate text-[12px] text-app-muted">
+          语音合成
+          {activeSheet && (
+            <>
+              <span className="mx-2 text-app-muted/60">/</span>
+              <span className="font-medium text-app-text">{activeSheet.name}</span>
+              <span className="ml-2">共 {activeJobs.length} 句</span>
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={() => setGridFullscreen((v) => !v)}
+          disabled={jobs.length === 0}
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-app-text transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
+          title={gridFullscreen ? '退出全屏' : '全屏编辑'}
+        >
+          {gridFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          {gridFullscreen ? '退出全屏' : '全屏'}
+        </button>
+      </div>
+      {jobs.length === 0 ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-10 text-app-muted">
+          <AudioLines size={36} strokeWidth={1.2} />
+          <p className="text-[13px]">
+            {workbookPath ? '该表没有标记为 tts 的语音行' : '选择工作簿后显示待合成语句'}
+          </p>
+        </div>
+      ) : (
+        <div ref={gridShell} className="h-full min-h-0 w-full flex-1">
+          <AgGridReact<TtsRow>
+            theme={appGridTheme}
+            context={context}
+            columnDefs={columnDefs}
+            defaultColDef={defaultColDef}
+            getRowId={getRowId}
+            rowData={rowData}
+            onGridReady={onGridReady}
+            onColumnResized={onColumnResized}
+            onBodyScroll={rememberScroll}
+            onCellClicked={onCellClicked}
+            onCellFocused={onCellFocused}
+            onCellValueChanged={onCellValueChanged}
+            stopEditingWhenCellsLoseFocus
+            animateRows={false}
+          />
+        </div>
+      )}
+    </section>
   )
 
   return (
@@ -743,52 +944,7 @@ export default function TtsPage({
         </div>
       )}
 
-      {expandedText && (
-        <section className="mb-2 overflow-hidden rounded-lg border border-app-border bg-white/45 text-[12px] dark:bg-zinc-900/30">
-          <div className="flex h-8 items-center justify-between gap-2 border-b border-app-border px-3">
-            <span className="min-w-0 truncate font-medium text-app-text">{expandedText.title}</span>
-            <button
-              type="button"
-              onClick={() => setExpandedText(null)}
-              className="flex h-6 w-6 items-center justify-center rounded text-app-muted hover:bg-black/5 hover:text-app-text dark:hover:bg-white/10"
-              aria-label="关闭文本预览"
-            >
-              <X size={13} />
-            </button>
-          </div>
-          <pre className="custom-scrollbar max-h-32 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-sans leading-5 text-app-text">
-            {expandedText.text || '（空）'}
-          </pre>
-        </section>
-      )}
-
-      <section className="glass-card custom-scrollbar min-h-0 flex-1 overflow-auto">
-        {jobs.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-app-muted">
-            <AudioLines size={36} strokeWidth={1.2} />
-            <p className="text-[13px]">
-              {workbookPath ? '该表没有标记为 tts 的语音行' : '选择工作簿后显示待合成语句'}
-            </p>
-          </div>
-        ) : (
-          <div ref={gridShell} className="h-full w-full">
-            <AgGridReact<TtsRow>
-              theme={appGridTheme}
-              context={context}
-              columnDefs={columnDefs}
-              defaultColDef={defaultColDef}
-              getRowId={getRowId}
-              rowData={rowData}
-              onGridReady={onGridReady}
-              onBodyScroll={rememberScroll}
-              onCellClicked={onCellClicked}
-              onCellValueChanged={onCellValueChanged}
-              stopEditingWhenCellsLoseFocus
-              animateRows={false}
-            />
-          </div>
-        )}
-      </section>
+      {gridFullscreen ? createPortal(gridPanel, document.body) : gridPanel}
 
       {audio && (
         <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-app-border bg-app-surface px-4 py-2.5 shadow-lg backdrop-blur-xl">
