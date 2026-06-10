@@ -31,6 +31,7 @@ export type TtsAudioRenamePlan = Record<string, Record<string, string>> // sheet
 export interface EnrichedJob extends TtsJob {
   tone: string
   status: 'missing' | 'generated' | 'applied' | 'stale'
+  statusTracked?: boolean
 }
 
 // 仅对 语音列(col23)=tts（不分大小写）的行规划合成任务，角色名前向填充。
@@ -315,7 +316,7 @@ export function serializeTtsConfig(cfg: TtsConfig): unknown {
   }
 }
 
-// 合成输入签名：用于「改过但未重新生成」检测
+// 合成输入签名：用于「修改待合成」检测
 export function ttsJobSignature(job: TtsJob, cfg: TtsConfig, textLang: string): string {
   const model = modelForRole(cfg, job.roleName)
   const remote = isRemoteRole(model)

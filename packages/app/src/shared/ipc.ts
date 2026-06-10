@@ -88,6 +88,8 @@ export interface TtsSynthSummary {
   ok: boolean
   done: number
   failed: number
+  doneNames?: string[]
+  failedNames?: string[]
   error?: string
 }
 

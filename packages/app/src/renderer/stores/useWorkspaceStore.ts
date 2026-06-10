@@ -12,6 +12,20 @@ interface SheetChangeState {
   sheets: Record<string, number>
 }
 
+interface TtsScrollPosition {
+  top: number
+  left: number
+}
+
+interface RowLocateTarget {
+  workbookPath: string
+  sheetName: string
+  excelRow: number
+  nonce: number
+}
+
+const ttsRowKey = (sheetName: string, excelRow: number): string => `${sheetName}\u0000${excelRow}`
+
 interface WorkspaceState {
   workbookPath: string // 当前活动工作簿 = workspace 里的副本（原表只作为导入种子，永不被改）
   workspaceDir: string // 当前表格的 workspace 文件夹（副本所在目录）
@@ -30,6 +44,14 @@ interface WorkspaceState {
   workspaceAssetsWorkbookPath: string
   assets: AssetIndex | null // 关联的 Ren'Py 工程资源索引（不持久化，启动时按 renpyDir 重扫）
   renpyDir: string // 关联工程时用户选择的目录（持久化，用于重开时重新关联）
+  tableActiveSheetByWorkbook: Record<string, string>
+  ttsActiveSheetByWorkbook: Record<string, string>
+  ttsTextLang: string
+  ttsPromptLang: string
+  ttsScrollByWorkbookSheet: Record<string, TtsScrollPosition>
+  ttsModifiedRowsByWorkbook: Record<string, Record<string, number>>
+  tableLocateTarget: RowLocateTarget | null
+  ttsLocateTarget: RowLocateTarget | null
   setWorkbookPath: (p: string) => void
   importWorkbook: (originalPath: string) => Promise<void> // 导入原表 → 建副本 → 切到副本
   setOutputDir: (p: string) => void
@@ -46,6 +68,15 @@ interface WorkspaceState {
   linkProject: (dir: string) => Promise<{ ok: boolean; error?: string }>
   setAssets: (a: AssetIndex) => void
   clearProject: () => Promise<void>
+  setTableActiveSheet: (workbookPath: string, sheetName: string) => void
+  setTtsActiveSheet: (workbookPath: string, sheetKey: string) => void
+  setTtsTextLang: (lang: string) => void
+  setTtsPromptLang: (lang: string) => void
+  setTtsScrollPosition: (key: string, position: TtsScrollPosition) => void
+  markTtsRowsModified: (workbookPath: string, rows: Array<{ sheetName: string; excelRow: number }>) => void
+  clearTtsRowsModified: (workbookPath: string, rows?: Array<{ sheetName: string; excelRow: number }>) => void
+  requestTableLocate: (target: Omit<RowLocateTarget, 'nonce'>) => void
+  requestTtsLocate: (target: Omit<RowLocateTarget, 'nonce'>) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -68,6 +99,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       workspaceAssetsWorkbookPath: '',
       assets: null,
       renpyDir: '',
+      tableActiveSheetByWorkbook: {},
+      ttsActiveSheetByWorkbook: {},
+      ttsTextLang: 'auto',
+      ttsPromptLang: 'auto',
+      ttsScrollByWorkbookSheet: {},
+      ttsModifiedRowsByWorkbook: {},
+      tableLocateTarget: null,
+      ttsLocateTarget: null,
       setWorkbookPath: (workbookPath) => {
         set({
           workbookPath,
@@ -373,6 +412,77 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         await window.e2r.clearProject()
         set({ assets: null, renpyDir: '' })
       },
+      setTableActiveSheet: (workbookPath, sheetName) => {
+        if (!workbookPath || !sheetName) return
+        set((state) => ({
+          tableActiveSheetByWorkbook: {
+            ...state.tableActiveSheetByWorkbook,
+            [workbookPath]: sheetName,
+          },
+        }))
+      },
+      setTtsActiveSheet: (workbookPath, sheetKey) => {
+        if (!workbookPath) return
+        set((state) => ({
+          ttsActiveSheetByWorkbook: {
+            ...state.ttsActiveSheetByWorkbook,
+            [workbookPath]: sheetKey,
+          },
+        }))
+      },
+      setTtsTextLang: (ttsTextLang) => set({ ttsTextLang }),
+      setTtsPromptLang: (ttsPromptLang) => set({ ttsPromptLang }),
+      setTtsScrollPosition: (key, position) => {
+        if (!key) return
+        set((state) => ({
+          ttsScrollByWorkbookSheet: {
+            ...state.ttsScrollByWorkbookSheet,
+            [key]: position,
+          },
+        }))
+      },
+      markTtsRowsModified: (workbookPath, rows) => {
+        if (!workbookPath || rows.length === 0) return
+        set((state) => {
+          const current = state.ttsModifiedRowsByWorkbook[workbookPath] ?? {}
+          const next = { ...current }
+          const now = Date.now()
+          for (const row of rows) next[ttsRowKey(row.sheetName, row.excelRow)] = now
+          return {
+            ttsModifiedRowsByWorkbook: {
+              ...state.ttsModifiedRowsByWorkbook,
+              [workbookPath]: next,
+            },
+          }
+        })
+      },
+      clearTtsRowsModified: (workbookPath, rows) => {
+        if (!workbookPath) return
+        set((state) => {
+          const current = state.ttsModifiedRowsByWorkbook[workbookPath] ?? {}
+          if (!rows) {
+            const rest = { ...state.ttsModifiedRowsByWorkbook }
+            delete rest[workbookPath]
+            return { ttsModifiedRowsByWorkbook: rest }
+          }
+          const next = { ...current }
+          for (const row of rows) delete next[ttsRowKey(row.sheetName, row.excelRow)]
+          return {
+            ttsModifiedRowsByWorkbook: {
+              ...state.ttsModifiedRowsByWorkbook,
+              [workbookPath]: next,
+            },
+          }
+        })
+      },
+      requestTableLocate: (target) => {
+        if (!target.workbookPath || !target.sheetName || !target.excelRow) return
+        set({ tableLocateTarget: { ...target, nonce: Date.now() } })
+      },
+      requestTtsLocate: (target) => {
+        if (!target.workbookPath || !target.sheetName || !target.excelRow) return
+        set({ ttsLocateTarget: { ...target, nonce: Date.now() } })
+      },
     }),
     {
       name: 'e2r-workspace',
@@ -381,6 +491,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         workspaceDir: s.workspaceDir,
         outputDir: s.outputDir,
         renpyDir: s.renpyDir,
+        tableActiveSheetByWorkbook: s.tableActiveSheetByWorkbook,
+        ttsActiveSheetByWorkbook: s.ttsActiveSheetByWorkbook,
+        ttsTextLang: s.ttsTextLang,
+        ttsPromptLang: s.ttsPromptLang,
+        ttsScrollByWorkbookSheet: s.ttsScrollByWorkbookSheet,
+        ttsModifiedRowsByWorkbook: s.ttsModifiedRowsByWorkbook,
       }),
     },
   ),

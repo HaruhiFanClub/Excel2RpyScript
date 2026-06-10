@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AgGridReact } from 'ag-grid-react'
+import type { CustomCellRendererProps } from 'ag-grid-react'
 import {
   type CellClickedEvent,
+  type CellFocusedEvent,
   type CellValueChangedEvent,
   type ColDef,
   type GetRowIdParams,
@@ -28,10 +30,13 @@ import { assetUrl } from '../lib/asset'
 
 type Row = Record<string, string | number>
 type AnchorRect = { left: number; right: number; top: number; bottom: number }
-type ImagePreview = { url: string; title: string; anchor: AnchorRect; avoidLeft?: number }
+type ImagePreview = { url: string; title: string; anchor: AnchorRect; avoidLeft?: number; preferredTop?: number }
 type RowDataCacheEntry = { sourceRows: TableRow[]; spriteKey: string; rows: Row[] }
 type TableRowInsertOp = Extract<TableRowOperation, { type: 'insert-row' }>
 type PendingInsertedRow = { op: TableRowInsertOp; sheet: string; excelRow: number }
+interface TableGridContext extends GridContext {
+  onJumpToTts: (sheetName: string, excelRow: number) => void
+}
 const EFFECTIVE_ROLE_FIELD = '__effectiveRole'
 const LARGE_TEXT = new Set(['text', 'voice_text', 'remark'])
 const IMAGE_PREVIEW_FIELDS = new Set(['background', 'sprite_left', 'sprite_mid', 'sprite_right'])
@@ -41,6 +46,7 @@ const RENDERERS: Record<string, ColDef<Row>['cellRenderer']> = {
   sound: AudioCell,
 }
 const FIRST_DATA_EXCEL_ROW = 8
+const IMAGE_PREVIEW_HEIGHT = 320
 // 立绘列拆成 左/中/右 三个虚拟列（底层仍写回单一 character 列）
 const SPRITE_SUB: { field: string; header: string; width: number }[] = [
   { field: 'sprite_left', header: '立绘·左', width: 112 },
@@ -85,6 +91,24 @@ function rightEdgeOfSpriteColumns(root: HTMLElement | null): number | undefined 
   return right > 0 ? right : undefined
 }
 
+function cssAttr(value: string): string {
+  return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, '\\$&')
+}
+
+function gridCellRect(root: HTMLElement | null, rowIndex: number, colId: string): AnchorRect | null {
+  const row = root?.querySelector<HTMLElement>(`.ag-row[row-index="${rowIndex}"]`)
+  const cell = row?.querySelector<HTMLElement>(`.ag-cell[col-id="${cssAttr(colId)}"]`)
+  const rect = cell?.getBoundingClientRect()
+  return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } : null
+}
+
+function imagePreviewStableTop(root: HTMLElement | null): number | undefined {
+  const rect = root?.getBoundingClientRect()
+  if (!rect) return undefined
+  const top = rect.top + 58
+  return Math.max(12, Math.min(top, window.innerHeight - IMAGE_PREVIEW_HEIGHT - 12))
+}
+
 function recomputeEffectiveRoles(rows: Row[]): void {
   let current = ''
   for (const row of [...rows].sort((a, b) => Number(a['__row']) - Number(b['__row']))) {
@@ -94,7 +118,45 @@ function recomputeEffectiveRoles(rows: Row[]): void {
   }
 }
 
-export default function TablePage({ active: pageActive = true }: { active?: boolean }) {
+function ttsInputRowsFromChanges(changes: TableChange[]): Array<{ sheetName: string; excelRow: number }> {
+  const rows = new Map<string, { sheetName: string; excelRow: number }>()
+  for (const change of changes) {
+    if ('type' in change) continue
+    if (change.col !== 'voice_text' && change.col !== 'voice_cmd') continue
+    const key = `${change.sheet}\u0000${change.excelRow}`
+    rows.set(key, { sheetName: change.sheet, excelRow: change.excelRow })
+  }
+  return [...rows.values()]
+}
+
+function TableRowNumberCell(p: CustomCellRendererProps<Row>) {
+  const ctx = p.context as TableGridContext
+  const sheetName = String(p.data?.['__sheet'] ?? '')
+  const excelRow = Number(p.data?.['__row'] ?? p.value)
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        ctx.onJumpToTts(sheetName, excelRow)
+      }}
+      className="h-full w-full text-left font-mono text-[12px] text-sky-600 hover:underline dark:text-sky-300"
+      title="在语音合成页定位该行"
+    >
+      {excelRow}
+    </button>
+  )
+}
+
+export default function TablePage({
+  active: pageActive = true,
+  onOpenTts,
+}: {
+  active?: boolean
+  onOpenTts?: () => void
+}) {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const workspaceAssets = useWorkspaceStore((s) =>
     s.workspaceAssetsWorkbookPath === s.workbookPath ? s.workspaceAssets : null,
@@ -111,6 +173,11 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
   const tableError = useWorkspaceStore((s) => s.tableError)
   const loadTableData = useWorkspaceStore((s) => s.loadTableData)
   const applyTableRowOpsToCache = useWorkspaceStore((s) => s.applyTableRowOpsToCache)
+  const savedActiveSheetName = useWorkspaceStore((s) => s.tableActiveSheetByWorkbook[s.workbookPath] ?? '')
+  const setTableActiveSheet = useWorkspaceStore((s) => s.setTableActiveSheet)
+  const markTtsRowsModified = useWorkspaceStore((s) => s.markTtsRowsModified)
+  const requestTtsLocate = useWorkspaceStore((s) => s.requestTtsLocate)
+  const tableLocateTarget = useWorkspaceStore((s) => s.tableLocateTarget)
   const ttsConfig = useCharactersStore((s) => s.config)
   // 立绘位置来自「角色配置」：自建角色留空用 left/mid/right，内置凉宫角色已带前缀配置。
   const spritePositions = useMemo(
@@ -169,8 +236,14 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
 
   useEffect(() => {
     if (!data) return
-    setActive((a) => (a < data.sheets.length ? a : 0))
-  }, [data])
+    setActive((current) => {
+      const savedIndex = savedActiveSheetName
+        ? data.sheets.findIndex((s) => s.name === savedActiveSheetName)
+        : -1
+      if (savedIndex >= 0) return savedIndex
+      return current < data.sheets.length ? current : 0
+    })
+  }, [data, savedActiveSheetName])
 
   useEffect(() => {
     if (!pageActive) return
@@ -210,10 +283,20 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     [assets, workbookPath, workspaceAssets],
   )
 
-  const context = useMemo<GridContext>(
+  const jumpToTts = useCallback(
+    (sheetName: string, excelRow: number) => {
+      if (!workbookPath || !sheetName || !Number.isFinite(excelRow)) return
+      requestTtsLocate({ workbookPath, sheetName, excelRow })
+      onOpenTts?.()
+    },
+    [onOpenTts, requestTtsLocate, workbookPath],
+  )
+
+  const context = useMemo<TableGridContext>(
     () => ({
       assets: availableAssets ?? EMPTY_ASSETS,
       ttsConfig,
+      onJumpToTts: jumpToTts,
       onImage: (url, title) =>
         setImagePreview({
           url,
@@ -235,8 +318,12 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         return null
       },
     }),
-    [availableAssets, ttsConfig, workbookPath, setWorkspaceAssets, setAssets],
+    [availableAssets, ttsConfig, jumpToTts, workbookPath, setWorkspaceAssets, setAssets],
   )
+
+  useEffect(() => {
+    if (workbookPath && sheet) setTableActiveSheet(workbookPath, sheet.name)
+  }, [setTableActiveSheet, sheet, workbookPath])
 
   const getRowId = useCallback((p: GetRowIdParams<Row>) => {
     return `${p.data['__sheet']}:${p.data['__row']}`
@@ -244,7 +331,16 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
 
   const columnDefs = useMemo<ColDef<Row>[]>(() => {
     const defs: ColDef<Row>[] = [
-      { headerName: '#', field: '__row', width: 60, pinned: 'left', sortable: false, editable: false, cellClass: 'text-app-muted' },
+      {
+        headerName: '#',
+        field: '__row',
+        width: 60,
+        pinned: 'left',
+        sortable: false,
+        editable: false,
+        cellRenderer: TableRowNumberCell,
+        cellClass: 'p-0',
+      },
     ]
     for (const c of TABLE_COLUMNS) {
       if (c.key === 'character') {
@@ -323,6 +419,51 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     gridApi.current = e.api
   }, [])
 
+  const locateDisplayedRow = useCallback(
+    (excelRow: number) => {
+      const api = gridApi.current
+      if (!api || !sheet) return
+      let displayedIndex: number | null = null
+      api.forEachNodeAfterFilterAndSort((node) => {
+        if (displayedIndex !== null) return
+        if (Number(node.data?.['__row']) === excelRow) displayedIndex = node.rowIndex ?? null
+      })
+      if (displayedIndex === null) return
+      api.ensureIndexVisible(displayedIndex, 'middle')
+      api.setFocusedCell(displayedIndex, '__row')
+      setSelectedRow({ sheet: sheet.name, excelRow })
+    },
+    [sheet],
+  )
+
+  useEffect(() => {
+    const target = tableLocateTarget
+    if (!target || target.workbookPath !== workbookPath || !data) return
+    const sheetIndex = data.sheets.findIndex((s) => s.name === target.sheetName)
+    if (sheetIndex < 0) return
+    if (active !== sheetIndex) {
+      setActive(sheetIndex)
+      setQuery('')
+      setImagePreview(null)
+      return
+    }
+    if (query) {
+      setQuery('')
+      return
+    }
+    if (!pageActive) return
+    const id = window.requestAnimationFrame(() => locateDisplayedRow(target.excelRow))
+    return () => window.cancelAnimationFrame(id)
+  }, [
+    active,
+    data,
+    locateDisplayedRow,
+    pageActive,
+    query,
+    tableLocateTarget,
+    workbookPath,
+  ])
+
   const baseCellValue = useCallback(
     (excelRow: number, col: CellEdit['col']): string => {
       const row = sheet?.rows.find((r) => r.excelRow === excelRow)
@@ -343,17 +484,14 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     [baseCellValue],
   )
 
-  const onCellClicked = useCallback(
-    (e: CellClickedEvent<Row>) => {
-      if (e.data) setSelectedRow({ sheet: String(e.data['__sheet'] ?? ''), excelRow: Number(e.data['__row']) })
-      const field = e.colDef.field
-      if (!assets || !field || !IMAGE_PREVIEW_FIELDS.has(field) || !e.data) {
+  const showImagePreviewForCell = useCallback(
+    (field: string | undefined, row: Row | undefined, anchor: AnchorRect | null) => {
+      if (!assets || !field || !IMAGE_PREVIEW_FIELDS.has(field) || !row) {
         setImagePreview(null)
         return
       }
-      const name = firstImageName(field, e.data)
+      const name = firstImageName(field, row)
       const rel = name ? resolveImage(assets, name) : null
-      const anchor = eventCellRect(e.event)
       if (!rel || !anchor) {
         setImagePreview(null)
         return
@@ -363,9 +501,33 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         title: name,
         anchor,
         avoidLeft: field.startsWith('sprite_') ? rightEdgeOfSpriteColumns(gridShell.current) : undefined,
+        preferredTop: imagePreviewStableTop(gridShell.current),
       })
     },
     [assets],
+  )
+
+  const onCellClicked = useCallback(
+    (e: CellClickedEvent<Row>) => {
+      if (e.data) setSelectedRow({ sheet: String(e.data['__sheet'] ?? ''), excelRow: Number(e.data['__row']) })
+      showImagePreviewForCell(e.colDef.field, e.data, eventCellRect(e.event))
+    },
+    [showImagePreviewForCell],
+  )
+
+  const onCellFocused = useCallback(
+    (e: CellFocusedEvent<Row>) => {
+      const rowIndex = e.rowIndex
+      const colId = typeof e.column === 'string' ? e.column : e.column?.getColId()
+      if (rowIndex == null || !colId) {
+        setImagePreview(null)
+        return
+      }
+      const row = e.api.getDisplayedRowAtIndex(rowIndex)?.data
+      if (row) setSelectedRow({ sheet: String(row['__sheet'] ?? ''), excelRow: Number(row['__row']) })
+      showImagePreviewForCell(colId, row, gridCellRect(gridShell.current, rowIndex, colId))
+    },
+    [showImagePreviewForCell],
   )
 
   const onCellValueChanged = useCallback(
@@ -563,13 +725,14 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         pendingInsertedRows.current = []
         setDirty(0)
         await loadTableData(workbookPath, { force: true })
+        markTtsRowsModified(workbookPath, ttsInputRowsFromChanges(pendingChanges))
         markSheetChanges(changedSheets, workbookPath)
         setStatus('已保存，脚本列表会自动更新，并在转换页提示未应用到工程的 sheet 更改')
       } else setLocalError(r.error)
     } finally {
       setSaving(false)
     }
-  }, [dirty, editedSheetNames, loadTableData, markSheetChanges, workbookPath])
+  }, [dirty, editedSheetNames, loadTableData, markSheetChanges, markTtsRowsModified, workbookPath])
 
   const saveAs = useCallback(async () => {
     if (!workbookPath) return
@@ -588,6 +751,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
         pendingInsertedRows.current = []
         setDirty(0)
         await loadTableData(workbookPath, { force: true })
+        markTtsRowsModified(workbookPath, ttsInputRowsFromChanges(pendingChanges))
         if (changedSheets.length > 0) markSheetChanges(changedSheets, workbookPath)
         setStatus(`已另存为：${r.path}`)
       } else if (r.error) {
@@ -596,7 +760,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
     } finally {
       setExporting(false)
     }
-  }, [editedSheetNames, loadTableData, markSheetChanges, workbookPath])
+  }, [editedSheetNames, loadTableData, markSheetChanges, markTtsRowsModified, workbookPath])
 
   const discard = useCallback(() => {
     edits.current.clear()
@@ -716,6 +880,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
               quickFilterText={query}
               onGridReady={onGridReady}
               onCellClicked={onCellClicked}
+              onCellFocused={onCellFocused}
               onCellValueChanged={onCellValueChanged}
               onBodyScroll={() => setImagePreview(null)}
               stopEditingWhenCellsLoseFocus
@@ -752,7 +917,7 @@ export default function TablePage({ active: pageActive = true }: { active?: bool
 function ImageSidePreview(props: { preview: ImagePreview; onClose: () => void }) {
   const { preview } = props
   const width = 300
-  const height = 320
+  const height = IMAGE_PREVIEW_HEIGHT
   const gutter = 10
   const minLeft = preview.avoidLeft ? preview.avoidLeft + gutter : 8
   const rightSide = Math.max(preview.anchor.right + gutter, minLeft)
@@ -764,7 +929,8 @@ function ImageSidePreview(props: { preview: ImagePreview; onClose: () => void })
     : canUseLeft
       ? leftSide
       : Math.max(minLeft, window.innerWidth - width - 12)
-  const top = Math.max(12, Math.min(preview.anchor.top - 14, window.innerHeight - height - 12))
+  const rawTop = preview.preferredTop ?? preview.anchor.top - 14
+  const top = Math.max(12, Math.min(rawTop, window.innerHeight - height - 12))
 
   return (
     <div

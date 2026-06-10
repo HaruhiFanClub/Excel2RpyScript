@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { CustomCellRendererProps } from 'ag-grid-react'
-import { type CellValueChangedEvent, type ColDef } from 'ag-grid-community'
+import {
+  type CellClickedEvent,
+  type CellValueChangedEvent,
+  type ColDef,
+  type GetRowIdParams,
+  type GridApi,
+  type GridReadyEvent,
+} from 'ag-grid-community'
 import {
   AudioLines,
   Pause,
@@ -51,26 +58,90 @@ type TtsRow = {
   __job: EnrichedJob
 }
 
+type TtsInputField = 'voice_cmd' | 'voice_text'
+type TextPreview = { title: string; text: string }
+
 interface TtsGridContext extends GridContext {
   onAudition: (job: EnrichedJob) => void
   onApplyJob: (job: EnrichedJob) => void
   onRevertJob: (job: EnrichedJob) => void
   onSynthJob: (job: EnrichedJob) => void
+  onJumpToTable: (sheetName: string, excelRow: number) => void
 }
 
-export default function TtsPage() {
+const ttsRowKey = (sheetName: string, excelRow: number): string => `${sheetName}\u0000${excelRow}`
+const ttsScrollKey = (workbookPath: string, sheetKey: string): string => `${workbookPath}\u0000${sheetKey}`
+
+function isTtsInputField(field: string | undefined): field is TtsInputField {
+  return field === 'voice_cmd' || field === 'voice_text'
+}
+
+function effectiveStatus(job: EnrichedJob, modifiedRows: Record<string, number>): EnrichedJob['status'] {
+  if (job.status !== 'missing' && job.statusTracked === false && modifiedRows[ttsRowKey(job.sheetName, job.excelRow)]) {
+    return 'stale'
+  }
+  return job.status
+}
+
+function gridScrollElements(root: HTMLElement | null): { body: HTMLElement | null; horizontal: HTMLElement | null } {
+  const body = root?.querySelector<HTMLElement>('.ag-body-viewport') ?? null
+  const horizontal = root?.querySelector<HTMLElement>('.ag-body-horizontal-scroll-viewport') ?? body
+  return { body, horizontal }
+}
+
+function TtsRowNumberCell(p: CustomCellRendererProps<TtsRow>) {
+  const ctx = p.context as TtsGridContext
+  const job = p.data?.__job
+  const excelRow = Number(p.data?.line ?? p.value)
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (job) ctx.onJumpToTable(job.sheetName, job.excelRow)
+      }}
+      className="h-full w-full text-left font-mono text-[12px] text-sky-600 hover:underline dark:text-sky-300"
+      title="在表格编辑页定位该行"
+    >
+      {excelRow}
+    </button>
+  )
+}
+
+export default function TtsPage({
+  active: pageActive = true,
+  onOpenTable,
+}: {
+  active?: boolean
+  onOpenTable?: () => void
+}) {
   const workbookPath = useWorkspaceStore((s) => s.workbookPath)
   const projectKey = useWorkspaceStore((s) => s.assets?.gamePath ?? '')
   const markSheetChanges = useWorkspaceStore((s) => s.markSheetChanges)
   const applyTableEditsToCache = useWorkspaceStore((s) => s.applyTableEditsToCache)
+  const tableDataRevision = useWorkspaceStore((s) => s.tableDataRevision)
+  const tableWorkbookPath = useWorkspaceStore((s) => s.tableWorkbookPath)
+  const textLang = useWorkspaceStore((s) => s.ttsTextLang)
+  const promptLang = useWorkspaceStore((s) => s.ttsPromptLang)
+  const setTextLang = useWorkspaceStore((s) => s.setTtsTextLang)
+  const setPromptLang = useWorkspaceStore((s) => s.setTtsPromptLang)
+  const savedActiveSheetKey = useWorkspaceStore((s) => s.ttsActiveSheetByWorkbook[s.workbookPath] ?? '')
+  const setStoredActiveSheet = useWorkspaceStore((s) => s.setTtsActiveSheet)
+  const ttsScrollByWorkbookSheet = useWorkspaceStore((s) => s.ttsScrollByWorkbookSheet)
+  const setTtsScrollPosition = useWorkspaceStore((s) => s.setTtsScrollPosition)
+  const modifiedRows = useWorkspaceStore((s) => s.ttsModifiedRowsByWorkbook[s.workbookPath] ?? {})
+  const markTtsRowsModified = useWorkspaceStore((s) => s.markTtsRowsModified)
+  const clearTtsRowsModified = useWorkspaceStore((s) => s.clearTtsRowsModified)
+  const requestTableLocate = useWorkspaceStore((s) => s.requestTableLocate)
+  const ttsLocateTarget = useWorkspaceStore((s) => s.ttsLocateTarget)
   const config = useCharactersStore((s) => s.config)
 
   const [health, setHealth] = useState<{ ok: boolean; device?: string; error?: string } | null>(null)
   const [managedUrl, setManagedUrl] = useState<string | null>(null)
   const [engineStarting, setEngineStarting] = useState(false)
 
-  const [textLang, setTextLang] = useState('auto')
-  const [promptLang, setPromptLang] = useState('auto')
   const [jobs, setJobs] = useState<EnrichedJob[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -78,7 +149,13 @@ export default function TtsPage() {
   const [audio, setAudio] = useState<{ url: string; title: string; outputName: string } | null>(null)
   const [audioPaused, setAudioPaused] = useState(true)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [activeSheetKey, setActiveSheetKey] = useState('')
+  const gridApi = useRef<GridApi<TtsRow> | null>(null)
+  const gridShell = useRef<HTMLDivElement>(null)
+  const scrollFrame = useRef<number | null>(null)
+  const lastSeenTableRevision = useRef(tableDataRevision)
+  const lastRestoredScrollKey = useRef('')
+  const [activeSheetKey, setActiveSheetKey] = useState(savedActiveSheetKey)
+  const [expandedText, setExpandedText] = useState<TextPreview | null>(null)
 
   // 启用角色分类：远端（自带模型/端点）/ 内嵌（本地引擎 zero-shot）
   const roleEntries = config ? Object.entries(config.roleModelMapping) : []
@@ -110,6 +187,27 @@ export default function TtsPage() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    if (!workbookPath || tableWorkbookPath !== workbookPath) {
+      lastSeenTableRevision.current = tableDataRevision
+      return
+    }
+    if (lastSeenTableRevision.current === tableDataRevision) return
+    lastSeenTableRevision.current = tableDataRevision
+    void refresh()
+  }, [refresh, tableDataRevision, tableWorkbookPath, workbookPath])
+
+  useEffect(() => {
+    if (!workbookPath) return
+    const resolvedRows = jobs
+      .filter((job) => {
+        const key = ttsRowKey(job.sheetName, job.excelRow)
+        return Boolean(modifiedRows[key]) && job.statusTracked !== false && job.status !== 'stale'
+      })
+      .map((job) => ({ sheetName: job.sheetName, excelRow: job.excelRow }))
+    if (resolvedRows.length > 0) clearTtsRowsModified(workbookPath, resolvedRows)
+  }, [clearTtsRowsModified, jobs, modifiedRows, workbookPath])
 
   useEffect(() => {
     return window.e2r.onTtsProgress((p: TtsProgress) => {
@@ -146,12 +244,22 @@ export default function TtsPage() {
           ...(managedUrl ? { baseUrl: managedUrl } : {}),
         })
         if (!r.ok && r.error) setError(r.error)
+        const doneNames = r.doneNames ?? (r.ok ? (only ?? jobs.map((job) => job.outputName)) : [])
+        if (doneNames.length > 0) {
+          const done = new Set(doneNames)
+          clearTtsRowsModified(
+            workbookPath,
+            jobs
+              .filter((job) => done.has(job.outputName))
+              .map((job) => ({ sheetName: job.sheetName, excelRow: job.excelRow })),
+          )
+        }
         await refresh()
       } finally {
         setBusy(false)
       }
     },
-    [workbookPath, textLang, promptLang, refresh, managedUrl],
+    [clearTtsRowsModified, jobs, workbookPath, textLang, promptLang, refresh, managedUrl],
   )
 
   const apply = useCallback(
@@ -221,11 +329,14 @@ export default function TtsPage() {
     })
   }, [toggleAudio])
 
-  // 可应用（有 pending 文件可落实）= 已生成 / 未重新生成
-  const appliable = jobs.filter((j) => j.status === 'generated' || j.status === 'stale')
+  // 可应用（有 pending 文件可落实）= 当前输入对应的已生成音频。
+  const appliable = jobs.filter((j) => effectiveStatus(j, modifiedRows) === 'generated')
 
   const counts = jobs.reduce(
-    (a, j) => ({ ...a, [j.status]: (a[j.status] ?? 0) + 1 }),
+    (a, j) => {
+      const status = effectiveStatus(j, modifiedRows)
+      return { ...a, [status]: (a[status] ?? 0) + 1 }
+    },
     {} as Record<string, number>,
   )
 
@@ -241,16 +352,70 @@ export default function TtsPage() {
   }, [jobs])
 
   useEffect(() => {
+    setActiveSheetKey(savedActiveSheetKey)
+    setExpandedText(null)
+    lastRestoredScrollKey.current = ''
+  }, [workbookPath])
+
+  useEffect(() => {
     if (jobSheets.length === 0) {
-      setActiveSheetKey('')
+      if (activeSheetKey) setActiveSheetKey('')
+      if (workbookPath && savedActiveSheetKey) setStoredActiveSheet(workbookPath, '')
       return
     }
-    if (!jobSheets.some((s) => s.key === activeSheetKey)) setActiveSheetKey(jobSheets[0]!.key)
-  }, [activeSheetKey, jobSheets])
+    const saved = savedActiveSheetKey && jobSheets.some((s) => s.key === savedActiveSheetKey)
+      ? savedActiveSheetKey
+      : ''
+    const current = activeSheetKey && jobSheets.some((s) => s.key === activeSheetKey)
+      ? activeSheetKey
+      : ''
+    const next = current || saved || jobSheets[0]!.key
+    if (activeSheetKey !== next) setActiveSheetKey(next)
+    if (workbookPath && savedActiveSheetKey !== next) setStoredActiveSheet(workbookPath, next)
+  }, [activeSheetKey, jobSheets, savedActiveSheetKey, setStoredActiveSheet, workbookPath])
 
   const activeSheet = jobSheets.find((s) => s.key === activeSheetKey) ?? jobSheets[0]
   const activeJobs = activeSheet?.jobs ?? []
-  const activeAppliable = activeJobs.filter((j) => j.status === 'generated' || j.status === 'stale')
+  const activeAppliable = activeJobs.filter((j) => effectiveStatus(j, modifiedRows) === 'generated')
+  const activeScrollKey = workbookPath && activeSheetKey ? ttsScrollKey(workbookPath, activeSheetKey) : ''
+  const savedScroll = activeScrollKey ? ttsScrollByWorkbookSheet[activeScrollKey] : undefined
+
+  const selectSheet = useCallback(
+    (key: string) => {
+      setActiveSheetKey(key)
+      setExpandedText(null)
+      if (workbookPath) setStoredActiveSheet(workbookPath, key)
+    },
+    [setStoredActiveSheet, workbookPath],
+  )
+
+  const rememberScroll = useCallback(() => {
+    if (!activeScrollKey) return
+    if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current)
+    scrollFrame.current = window.requestAnimationFrame(() => {
+      scrollFrame.current = null
+      const { body, horizontal } = gridScrollElements(gridShell.current)
+      setTtsScrollPosition(activeScrollKey, {
+        top: body?.scrollTop ?? 0,
+        left: horizontal?.scrollLeft ?? body?.scrollLeft ?? 0,
+      })
+    })
+  }, [activeScrollKey, setTtsScrollPosition])
+
+  const jumpToTable = useCallback(
+    (sheetName: string, excelRow: number) => {
+      if (!workbookPath || !sheetName || !Number.isFinite(excelRow)) return
+      requestTableLocate({ workbookPath, sheetName, excelRow })
+      onOpenTable?.()
+    },
+    [onOpenTable, requestTableLocate, workbookPath],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current)
+    }
+  }, [])
 
   const context = useMemo<TtsGridContext>(
     () => ({
@@ -263,8 +428,9 @@ export default function TtsPage() {
       onApplyJob: (job) => void apply([job.outputName]),
       onRevertJob: (job) => void revertGenerated([job.outputName]),
       onSynthJob: (job) => void synth([job.outputName]),
+      onJumpToTable: jumpToTable,
     }),
-    [config, audition, apply, revertGenerated, synth],
+    [config, audition, apply, revertGenerated, synth, jumpToTable],
   )
 
   const columnDefs = useMemo<ColDef<TtsRow>[]>(
@@ -276,7 +442,8 @@ export default function TtsPage() {
         minWidth: 58,
         pinned: 'left',
         editable: false,
-        cellClass: 'font-mono text-app-muted',
+        cellRenderer: TtsRowNumberCell,
+        cellClass: 'p-0',
       },
       {
         headerName: '角色',
@@ -301,7 +468,6 @@ export default function TtsPage() {
         minWidth: 220,
         flex: 1.15,
         editable: false,
-        tooltipField: 'dialogue_text',
       },
       {
         headerName: '语音文本',
@@ -309,8 +475,9 @@ export default function TtsPage() {
         width: 320,
         minWidth: 220,
         flex: 1,
-        editable: false,
-        tooltipField: 'voice_text',
+        editable: true,
+        cellEditor: 'agLargeTextCellEditor',
+        cellEditorPopup: true,
       },
       {
         headerName: '状态',
@@ -341,7 +508,7 @@ export default function TtsPage() {
         voice_cmd: job.voiceCmd,
         dialogue_text: job.dialogueText,
         voice_text: job.voiceText,
-        status: job.status,
+        status: effectiveStatus(job, modifiedRows),
         outputName: job.outputName,
         run: progress[job.outputName],
         busy,
@@ -349,19 +516,100 @@ export default function TtsPage() {
         playbackPaused: audioPaused,
         __job: job,
       })),
-    [activeJobs, audio?.outputName, audioPaused, busy, progress],
+    [activeJobs, audio?.outputName, audioPaused, busy, modifiedRows, progress],
   )
+
+  useEffect(() => {
+    if (!pageActive || !activeScrollKey) return
+    const restoreKey = `${activeScrollKey}:${rowData.length}`
+    if (lastRestoredScrollKey.current === restoreKey) return
+    lastRestoredScrollKey.current = restoreKey
+    const pos = savedScroll
+    window.requestAnimationFrame(() => {
+      const { body, horizontal } = gridScrollElements(gridShell.current)
+      if (body) body.scrollTop = pos?.top ?? 0
+      if (horizontal) horizontal.scrollLeft = pos?.left ?? 0
+      else if (body) body.scrollLeft = pos?.left ?? 0
+    })
+  }, [activeScrollKey, pageActive, rowData.length, savedScroll])
+
+  useEffect(() => {
+    if (!pageActive) return
+    const id = window.requestAnimationFrame(() => {
+      gridApi.current?.refreshCells({ force: false })
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [pageActive])
+
+  const getRowId = useCallback((p: GetRowIdParams<TtsRow>) => p.data.outputName, [])
+
+  const onGridReady = useCallback((e: GridReadyEvent<TtsRow>) => {
+    gridApi.current = e.api
+  }, [])
+
+  const locateTtsRow = useCallback((excelRow: number) => {
+    const api = gridApi.current
+    if (!api) return
+    let displayedIndex: number | null = null
+    api.forEachNodeAfterFilterAndSort((node) => {
+      if (displayedIndex !== null) return
+      if (Number(node.data?.line) === excelRow) displayedIndex = node.rowIndex ?? null
+    })
+    if (displayedIndex === null) return
+    api.ensureIndexVisible(displayedIndex, 'middle')
+    api.setFocusedCell(displayedIndex, 'line')
+  }, [])
+
+  useEffect(() => {
+    const target = ttsLocateTarget
+    if (!target || target.workbookPath !== workbookPath) return
+    const group = jobSheets.find((s) => s.name === target.sheetName)
+    if (!group) return
+    if (activeSheetKey !== group.key) {
+      selectSheet(group.key)
+      return
+    }
+    if (!pageActive) return
+    const id = window.requestAnimationFrame(() => locateTtsRow(target.excelRow))
+    return () => window.cancelAnimationFrame(id)
+  }, [
+    activeSheetKey,
+    jobSheets,
+    locateTtsRow,
+    pageActive,
+    selectSheet,
+    ttsLocateTarget,
+    workbookPath,
+  ])
+
+  const onCellClicked = useCallback((e: CellClickedEvent<TtsRow>) => {
+    if (!e.data) return
+    const field = e.colDef.field
+    if (field !== 'dialogue_text' && field !== 'voice_text') {
+      setExpandedText(null)
+      return
+    }
+    const label = field === 'dialogue_text' ? '台词' : '语音文本'
+    setExpandedText({
+      title: `${label} · ${e.data.role_name} · Excel 第 ${e.data.line} 行`,
+      text: String(e.value ?? ''),
+    })
+  }, [])
 
   const onCellValueChanged = useCallback(
     async (e: CellValueChangedEvent<TtsRow>) => {
-      if (!workbookPath || e.colDef.field !== 'voice_cmd') return
+      const field = e.colDef.field
+      if (!workbookPath || !isTtsInputField(field)) return
       const job = e.data.__job
-      const value = String(e.newValue ?? '').trim()
-      if (value === job.voiceCmd) return
-      const edits = [{ sheet: job.sheetName, excelRow: job.excelRow, col: 'voice_cmd' as const, value }]
+      const rawValue = e.newValue == null ? '' : String(e.newValue)
+      const value = field === 'voice_cmd' ? rawValue.trim() : rawValue
+      const previous = field === 'voice_cmd' ? job.voiceCmd : job.voiceText
+      if (value === previous) return
+      const edits = [{ sheet: job.sheetName, excelRow: job.excelRow, col: field, value }]
       const r = await window.e2r.saveTable(workbookPath, edits)
       if (r.ok) {
         applyTableEditsToCache(edits, workbookPath)
+        markTtsRowsModified(workbookPath, [{ sheetName: job.sheetName, excelRow: job.excelRow }])
         setError(null)
         markSheetChanges([job.sheetName], workbookPath)
         await refresh()
@@ -369,7 +617,7 @@ export default function TtsPage() {
         setError(r.error)
       }
     },
-    [applyTableEditsToCache, markSheetChanges, workbookPath, refresh],
+    [applyTableEditsToCache, markSheetChanges, markTtsRowsModified, workbookPath, refresh],
   )
 
   return (
@@ -451,7 +699,7 @@ export default function TtsPage() {
           <span>共 {jobs.length} 句</span>
           <span className="text-emerald-500">已应用 {counts['applied'] ?? 0}</span>
           <span className="text-sky-500">已生成 {counts['generated'] ?? 0}</span>
-          <span className="text-amber-500">未重新生成 {counts['stale'] ?? 0}</span>
+          <span className="text-amber-500">修改待合成 {counts['stale'] ?? 0}</span>
           <span>未生成 {counts['missing'] ?? 0}</span>
           {error && <span className="text-rose-500">· {error}</span>}
         </div>
@@ -461,7 +709,7 @@ export default function TtsPage() {
         <SheetTabs
           tabs={jobSheets.map((s) => ({ key: s.key, label: s.name, count: s.jobs.length }))}
           activeKey={activeSheet?.key ?? ''}
-          onChange={setActiveSheetKey}
+          onChange={selectSheet}
         />
       )}
 
@@ -477,7 +725,7 @@ export default function TtsPage() {
               onClick={() => apply(activeAppliable.map((j) => j.outputName))}
               disabled={busy || activeAppliable.length === 0}
               className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 disabled:opacity-50 dark:text-emerald-300"
-              title="只应用当前 sheet 中已生成或未重新生成的语音"
+              title="只应用当前 sheet 中已生成且与当前输入匹配的语音"
             >
               <CheckCheck size={13} /> 应用当前 sheet
               {activeAppliable.length ? ` (${activeAppliable.length})` : ''}
@@ -495,6 +743,25 @@ export default function TtsPage() {
         </div>
       )}
 
+      {expandedText && (
+        <section className="mb-2 overflow-hidden rounded-lg border border-app-border bg-white/45 text-[12px] dark:bg-zinc-900/30">
+          <div className="flex h-8 items-center justify-between gap-2 border-b border-app-border px-3">
+            <span className="min-w-0 truncate font-medium text-app-text">{expandedText.title}</span>
+            <button
+              type="button"
+              onClick={() => setExpandedText(null)}
+              className="flex h-6 w-6 items-center justify-center rounded text-app-muted hover:bg-black/5 hover:text-app-text dark:hover:bg-white/10"
+              aria-label="关闭文本预览"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <pre className="custom-scrollbar max-h-32 overflow-auto whitespace-pre-wrap break-words px-3 py-2 font-sans leading-5 text-app-text">
+            {expandedText.text || '（空）'}
+          </pre>
+        </section>
+      )}
+
       <section className="glass-card custom-scrollbar min-h-0 flex-1 overflow-auto">
         {jobs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-app-muted">
@@ -504,13 +771,17 @@ export default function TtsPage() {
             </p>
           </div>
         ) : (
-          <div className="h-full w-full">
+          <div ref={gridShell} className="h-full w-full">
             <AgGridReact<TtsRow>
               theme={appGridTheme}
               context={context}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
+              getRowId={getRowId}
               rowData={rowData}
+              onGridReady={onGridReady}
+              onBodyScroll={rememberScroll}
+              onCellClicked={onCellClicked}
               onCellValueChanged={onCellValueChanged}
               stopEditingWhenCellsLoseFocus
               animateRows={false}
@@ -588,7 +859,7 @@ function ActionsCell(p: CustomCellRendererProps<TtsRow>) {
   const isPlaying = p.data.playing && !p.data.playbackPaused
   return (
     <div className="flex h-full items-center gap-1">
-      {job.status !== 'missing' && (
+      {p.data.status !== 'missing' && (
         <button
           type="button"
           onClick={() => ctx.onAudition(job)}
@@ -600,7 +871,7 @@ function ActionsCell(p: CustomCellRendererProps<TtsRow>) {
           {isPlaying ? <Pause size={11} /> : <Play size={11} />}
         </button>
       )}
-      {(job.status === 'generated' || job.status === 'stale') && (
+      {p.data.status === 'generated' && (
         <button
           type="button"
           onClick={() => ctx.onApplyJob(job)}
@@ -611,7 +882,7 @@ function ActionsCell(p: CustomCellRendererProps<TtsRow>) {
           <Check size={12} />
         </button>
       )}
-      {job.status === 'generated' && (
+      {p.data.status === 'generated' && (
         <button
           type="button"
           onClick={() => ctx.onRevertJob(job)}
@@ -643,6 +914,6 @@ function StatusBadge({ status, run }: { status: EnrichedJob['status']; run?: Run
   if (status === 'generated' || run === 'done')
     return <span className="flex items-center gap-1 text-sky-500"><CircleCheck size={13} /> 已生成</span>
   if (status === 'stale')
-    return <span className="flex items-center gap-1 text-amber-500"><CircleAlert size={13} /> 未重新生成</span>
+    return <span className="flex items-center gap-1 text-amber-500"><CircleAlert size={13} /> 修改待合成</span>
   return <span className="flex items-center gap-1 text-app-muted"><CircleDashed size={13} /> 未生成</span>
 }

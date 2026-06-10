@@ -576,6 +576,8 @@ function registerIpc(): void {
       const audioDir = ttsDirsFor(args.xlsxPath).pending
       let done = 0
       let failed = 0
+      const doneNames: string[] = []
+      const failedNames: string[] = []
       let lastRole: string | null = null
       for (let i = 0; i < jobs.length; i++) {
         const job = jobs[i]!
@@ -596,6 +598,7 @@ function registerIpc(): void {
           })
           lastRole = job.roleName
           done++
+          doneNames.push(job.outputName)
           e.sender.send('tts:progress', {
             outputName: job.outputName,
             index: i,
@@ -604,6 +607,7 @@ function registerIpc(): void {
           })
         } catch (err) {
           failed++
+          failedNames.push(job.outputName)
           e.sender.send('tts:progress', {
             outputName: job.outputName,
             index: i,
@@ -613,9 +617,9 @@ function registerIpc(): void {
           })
         }
       }
-      return { ok: failed === 0, done, failed }
+      return { ok: failed === 0, done, failed, doneNames, failedNames }
     } catch (e2) {
-      return { ok: false, done: 0, failed: 0, error: errMsg(e2) }
+      return { ok: false, done: 0, failed: 0, doneNames: [], failedNames: [], error: errMsg(e2) }
     }
   })
 }

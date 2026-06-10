@@ -19,6 +19,7 @@ export function App(): JSX.Element {
   const initial = (window.e2r.demoPage as PageId | null) ?? null
   const [page, setPage] = useState<PageId>(initial && PAGES.includes(initial) ? initial : 'convert')
   const [tableVisited, setTableVisited] = useState(page === 'table')
+  const [ttsVisited, setTtsVisited] = useState(page === 'tts')
   const [updateOpen, setUpdateOpen] = useState(false)
   const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null)
@@ -30,6 +31,7 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (page === 'table') setTableVisited(true)
+    if (page === 'tts') setTtsVisited(true)
   }, [page])
 
   useEffect(() => {
@@ -66,6 +68,16 @@ export function App(): JSX.Element {
     }
   }
 
+  const openTable = () => {
+    setTableVisited(true)
+    setPage('table')
+  }
+
+  const openTts = () => {
+    setTtsVisited(true)
+    setPage('tts')
+  }
+
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-app-bg text-app-text">
       {/* 静态背景光晕 */}
@@ -92,11 +104,20 @@ export function App(): JSX.Element {
                     page === 'table' ? 'block' : 'hidden'
                   } mx-auto h-full max-w-none px-8 pb-7 pt-6`}
                 >
-                  <TablePage active={page === 'table'} />
+                  <TablePage active={page === 'table'} onOpenTts={openTts} />
+                </div>
+              )}
+              {ttsVisited && (
+                <div
+                  className={`${
+                    page === 'tts' ? 'block' : 'hidden'
+                  } mx-auto h-full max-w-none px-8 pb-7 pt-6`}
+                >
+                  <TtsPage active={page === 'tts'} onOpenTable={openTable} />
                 </div>
               )}
               <AnimatePresence mode="wait">
-                {page !== 'table' && (
+                {page !== 'table' && page !== 'tts' && (
                   <motion.div
                     key={page}
                     initial={{ opacity: 0, y: 6 }}
@@ -107,11 +128,10 @@ export function App(): JSX.Element {
                   >
                     <div
                       className={`mx-auto h-full px-8 pb-7 pt-6 ${
-                        page === 'tts' || page === 'project' ? 'max-w-none' : 'max-w-5xl'
+                        page === 'project' ? 'max-w-none' : 'max-w-5xl'
                       }`}
                     >
                       {page === 'convert' && <ConvertPage />}
-                      {page === 'tts' && <TtsPage />}
                       {page === 'characters' && <CharactersPage />}
                       {page === 'project' && <ProjectPage />}
                       {page === 'check' && <CheckPage />}

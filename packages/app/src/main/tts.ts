@@ -267,17 +267,26 @@ export async function enrichedJobs(
     const stem = stemOfAudioName(name)
     const projectHasAudio = inProject.has(key) || projectIndex.has(key) || projectIndex.has(stem)
     let status: EnrichedJob['status']
-    if (inVoice.has(key) && appMan[name] === sig) status = 'applied'
-    else if (inPending.has(key) && genMan[name] === sig) status = 'generated'
-    else if (
+    let statusTracked = false
+    if (inVoice.has(key) && appMan[name] === sig) {
+      status = 'applied'
+      statusTracked = true
+    } else if (inPending.has(key) && genMan[name] === sig) {
+      status = 'generated'
+      statusTracked = true
+    } else if (
       (inVoice.has(key) && hasManifestEntry(appMan, name)) ||
       (inPending.has(key) && hasManifestEntry(genMan, name))
-    )
+    ) {
       status = 'stale'
-    else if (projectHasAudio || inVoice.has(key)) status = 'applied'
+      statusTracked = true
+    } else if (projectHasAudio || inVoice.has(key)) status = 'applied'
     else if (inPending.has(key)) status = 'generated'
-    else status = 'missing'
-    return { ...j, tone, status }
+    else {
+      status = 'missing'
+      statusTracked = true
+    }
+    return { ...j, tone, status, statusTracked }
   })
 }
 
