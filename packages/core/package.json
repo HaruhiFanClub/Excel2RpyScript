@@ -1,6 +1,6 @@
 {
   "name": "@e2r/core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "纯 TS 转换/TTS/校对内核：逐字符对齐旧 Python 工具。输入 CellValue[][]，输出 rpy 字符串。",
   "type": "module",
   "main": "src/index.ts",

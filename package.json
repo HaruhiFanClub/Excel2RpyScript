@@ -1,7 +1,7 @@
 {
   "name": "excel2rpy",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Excel→RenPy 转换 + 批量 TTS 的现代化 Electron 桌面应用",
   "packageManager": "pnpm@10.11.0",
   "engines": {
