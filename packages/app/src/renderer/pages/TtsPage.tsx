@@ -771,25 +771,46 @@ export default function TtsPage({
     <section className={`glass-card e2r-grid-panel ${gridFullscreen ? 'e2r-grid-panel-fullscreen' : 'flex-1'}`}>
       <div className="e2r-grid-panel-toolbar">
         <span className="min-w-0 truncate text-[12px] text-app-muted">
-          语音合成
+          当前 sheet
           {activeSheet && (
             <>
-              <span className="mx-2 text-app-muted/60">/</span>
+              <span className="mx-2 text-app-muted/60">:</span>
               <span className="font-medium text-app-text">{activeSheet.name}</span>
               <span className="ml-2">共 {activeJobs.length} 句</span>
             </>
           )}
         </span>
-        <button
-          type="button"
-          onClick={() => setGridFullscreen((v) => !v)}
-          disabled={jobs.length === 0}
-          className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-app-text transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
-          title={gridFullscreen ? '退出全屏' : '全屏编辑'}
-        >
-          {gridFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          {gridFullscreen ? '退出全屏' : '全屏'}
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => apply(activeAppliable.map((j) => j.outputName))}
+            disabled={busy || activeAppliable.length === 0}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 disabled:opacity-50 dark:text-emerald-300"
+            title="只应用当前 sheet 中已生成且与当前输入匹配的语音"
+          >
+            <CheckCheck size={13} /> 应用当前 sheet
+            {activeAppliable.length ? ` (${activeAppliable.length})` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => synth(activeJobs.map((j) => j.outputName))}
+            disabled={!workbookPath || busy || activeJobs.length === 0}
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-sky-500 px-3 text-[12px] font-medium text-white shadow-sm shadow-sky-500/20 transition-all hover:bg-sky-600 disabled:opacity-50"
+            title="只合成当前 sheet 中的全部 TTS 语句"
+          >
+            {busy ? <span className="spinner" /> : <Wand2 size={13} />} 合成当前 sheet
+          </button>
+          <button
+            type="button"
+            onClick={() => setGridFullscreen((v) => !v)}
+            disabled={jobs.length === 0}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-app-text transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
+            title={gridFullscreen ? '退出全屏' : '全屏编辑'}
+          >
+            {gridFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            {gridFullscreen ? '退出全屏' : '全屏'}
+          </button>
+        </div>
       </div>
       {jobs.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-10 text-app-muted">
@@ -912,36 +933,6 @@ export default function TtsPage({
           activeKey={activeSheet?.key ?? ''}
           onChange={selectSheet}
         />
-      )}
-
-      {activeSheet && (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-app-border bg-white/35 px-3 py-2 text-[12px] dark:bg-zinc-900/25">
-          <span className="min-w-0 truncate text-app-muted">
-            当前 sheet：<span className="font-medium text-app-text">{activeSheet.name}</span>
-            <span className="ml-2">共 {activeJobs.length} 句</span>
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => apply(activeAppliable.map((j) => j.outputName))}
-              disabled={busy || activeAppliable.length === 0}
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 text-[12px] font-medium text-emerald-600 transition-colors hover:bg-emerald-400/20 disabled:opacity-50 dark:text-emerald-300"
-              title="只应用当前 sheet 中已生成且与当前输入匹配的语音"
-            >
-              <CheckCheck size={13} /> 应用当前 sheet
-              {activeAppliable.length ? ` (${activeAppliable.length})` : ''}
-            </button>
-            <button
-              type="button"
-              onClick={() => synth(activeJobs.map((j) => j.outputName))}
-              disabled={!workbookPath || busy || activeJobs.length === 0}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-sky-500 px-3 text-[12px] font-medium text-white shadow-sm shadow-sky-500/20 transition-all hover:bg-sky-600 disabled:opacity-50"
-              title="只合成当前 sheet 中的全部 TTS 语句"
-            >
-              {busy ? <span className="spinner" /> : <Wand2 size={13} />} 合成当前 sheet
-            </button>
-          </div>
-        </div>
       )}
 
       {gridFullscreen ? createPortal(gridPanel, document.body) : gridPanel}
