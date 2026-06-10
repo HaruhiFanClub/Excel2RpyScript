@@ -231,6 +231,18 @@ function createWindow(): void {
     },
   })
 
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      console.log(`[renderer:${level}] ${sourceId}:${line} ${message}`)
+    })
+    win.webContents.on('did-fail-load', (_event, code, description, url) => {
+      console.error(`[renderer:load-failed] ${code} ${description} ${url}`)
+    })
+    win.webContents.on('render-process-gone', (_event, details) => {
+      console.error(`[renderer:gone] ${details.reason} ${details.exitCode}`)
+    })
+  }
+
   win.once('ready-to-show', () => win.show())
 
   if (process.env['ELECTRON_RENDERER_URL']) {
